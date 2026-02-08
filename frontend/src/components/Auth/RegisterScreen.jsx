@@ -42,7 +42,7 @@ export default function RegisterScreen({ onSuccess, onBackToLogin }) {
       onSuccess?.();
     } catch (err) {
       const msg = err.response?.data?.error
-        || (err.code === 'ERR_NETWORK' ? 'Cannot reach server. Is the backend running on port 5000?' : 'Create account failed');
+        || (err.code === 'ERR_NETWORK' ? 'Cannot reach server. Is the backend running on port 5001?' : 'Create account failed');
       toast.error(msg);
     } finally {
       setLoading(false);

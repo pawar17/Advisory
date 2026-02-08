@@ -1,13 +1,10 @@
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 export default function ProfileScreen({ user, goal }) {
-  const navigate = useNavigate();
   const { logout } = useAuth();
 
   const handleSignOut = () => {
     logout();
-    navigate(0);
   };
 
   return (

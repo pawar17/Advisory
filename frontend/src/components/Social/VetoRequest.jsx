@@ -1,9 +1,30 @@
 import { motion } from 'framer-motion';
 
 export default function VetoRequestCard({ request, onVote, currentUserId }) {
+  const isRequester = request.requesterId && currentUserId && String(request.requesterId) === String(currentUserId);
   const hasVoted = request.votes?.some((v) => v.userId === currentUserId);
   const approveCount = request.votes?.filter((v) => v.vote === 'approve').length ?? 0;
   const vetoCount = request.votes?.filter((v) => v.vote === 'veto').length ?? 0;
+  const status = request.status || 'pending';
+
+  if (isRequester) {
+    const message =
+      status === 'approved' ? 'Your veto was approved' :
+      status === 'rejected' ? 'Your veto was rejected' :
+      'Your request is pending';
+    const detail = [request.item, request.amount != null && `$${request.amount}`].filter(Boolean).join(' — ');
+    const isResolved = status === 'approved' || status === 'rejected';
+    return (
+      <motion.div whileHover={{ scale: 1.01 }} className="editorial-card p-4 rounded-2xl border border-dashed border-brand-pink/30">
+        <p className={`text-sm font-medium ${isResolved ? (status === 'approved' ? 'text-green-700' : 'text-red-700') : 'text-gray-600'}`}>
+          {status === 'approved' && '✅ '}
+          {status === 'rejected' && '🚫 '}
+          {message}
+          {detail && <span className="text-gray-600 font-normal"> — {detail}</span>}
+        </p>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div whileHover={{ scale: 1.02 }} className="editorial-card p-5 rounded-3xl space-y-4 border-2 border-dashed border-brand-pink/30">

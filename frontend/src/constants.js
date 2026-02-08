@@ -5,6 +5,7 @@ export const MOCK_FEED = [
 
 export const MOCK_VETO_REQUESTS = [
   { id: 'v1', user: { name: 'Bob Smith', avatar: '👨', username: 'bob_budgets' }, item: 'Sony Headphones', amount: 150, reason: 'On sale – worth it?', votes: [], status: 'pending' },
+  { id: 'v2', user: { name: 'Anna Sopena', avatar: '👩', username: 'annasopena' }, item: 'Wireless earbuds', amount: 89, reason: 'Need them for the gym – good deal?', votes: [], status: 'pending' },
 ];
 
 export const MOCK_FRIENDS = [

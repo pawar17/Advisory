@@ -38,7 +38,9 @@ class User:
         return result.inserted_id
 
     def find_by_username(self, username):
-        """Find user by username"""
+        """Find user by username (caller should pass lowercase for case-insensitive match)"""
+        if not username:
+            return None
         return self.collection.find_one({"username": username})
 
     def find_by_email(self, email):

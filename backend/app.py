@@ -11,7 +11,9 @@ from config.database import db_instance
 from models.user import User
 from models.goal import Goal
 from models.side_quest import SideQuest
-from utils.auth import hash_password, verify_password, create_access_token, jwt_required
+from models.daily_flow import DailyFlow
+from models.veto_request import VetoRequest as VetoRequestModel
+from utils.auth import hash_password, verify_password, check_user_password, create_access_token, jwt_required
 from utils.nessie import (
     get_customer_accounts, get_all_transactions, get_account,
     get_all_customers
@@ -29,6 +31,8 @@ db = db_instance.connect()
 user_model = User(db)
 goal_model = Goal(db)
 quest_model = SideQuest(db)
+daily_flow_model = DailyFlow(db)
+veto_request_model = VetoRequestModel(db)
 
 # ============================================================================
 # AUTHENTICATION ROUTES
@@ -84,20 +88,20 @@ def register():
 def login():
     """User login"""
     try:
-        data = request.json
-        username = data.get('username')
-        password = data.get('password')
+        data = request.get_json(silent=True) or {}
+        username = (data.get('username') or '').strip()
+        password = data.get('password') or ''
 
         if not username or not password:
             return jsonify({"error": "Missing username or password"}), 400
 
-        # Find user
-        user = user_model.find_by_username(username)
+        # Find user (case-insensitive)
+        user = user_model.find_by_username(username.lower())
         if not user:
             return jsonify({"error": "Invalid credentials"}), 401
 
-        # Verify password
-        if not verify_password(password, user['password_hash']):
+        # Verify password (supports password_hash or plain password field)
+        if not check_user_password(password, user):
             return jsonify({"error": "Invalid credentials"}), 401
 
         # Create JWT token
@@ -108,9 +112,9 @@ def login():
             "token": token,
             "user": {
                 "id": str(user['_id']),
-                "username": user['username'],
-                "name": user['name'],
-                "email": user['email']
+                "username": user.get('username', ''),
+                "name": user.get('name') or user.get('username', ''),
+                "email": user.get('email', '')
             }
         }), 200
 
@@ -164,16 +168,22 @@ def update_profile():
 @app.route('/api/gamification/stats', methods=['GET'])
 @jwt_required
 def get_game_stats():
-    """Get user's game statistics"""
+    """Get user's game statistics. Streak is computed from daily_flow when available."""
     try:
         user = user_model.find_by_id(request.user_id)
         if not user:
             return jsonify({"error": "User not found"}), 404
 
+        # Streak from streak calculator (daily_flow); fallback to stored current_streak
+        try:
+            streak = daily_flow_model.calculate_streak(request.user_id)
+        except Exception:
+            streak = user.get('current_streak', 0)
+
         return jsonify({
             "points": user.get('game_points', 0),
             "currency": user.get('game_currency', 0),
-            "streak": user.get('current_streak', 0),
+            "streak": streak,
             "longest_streak": user.get('longest_streak', 0)
         }), 200
 
@@ -442,6 +452,100 @@ def complete_quest(user_quest_id):
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# ============================================================================
+# VETO REQUESTS (cross-user: Anna creates, Suhani sees)
+# ============================================================================
+
+def _format_veto_request(doc):
+    if not doc:
+        return None
+    votes = doc.get("votes") or []
+    return {
+        "id": str(doc["_id"]),
+        "requesterId": str(doc.get("user_id", "")),
+        "user": {
+            "name": doc.get("name") or doc.get("username", ""),
+            "username": doc.get("username", ""),
+            "avatar": (doc.get("name") or doc.get("username") or "?")[0].upper(),
+        },
+        "item": doc.get("item", ""),
+        "amount": doc.get("amount", 0),
+        "reason": doc.get("reason", ""),
+        "votes": [{"userId": v.get("userId"), "vote": v.get("vote")} for v in votes],
+        "status": doc.get("status", "pending"),
+    }
+
+
+@app.route('/api/veto-requests', methods=['GET'])
+@jwt_required
+def list_veto_requests():
+    """Pending requests + current user's own approved/rejected (so requester sees outcome)."""
+    try:
+        docs = veto_request_model.get_visible_for_user(request.user_id)
+        return jsonify({"vetoRequests": [_format_veto_request(d) for d in docs]}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/veto-requests', methods=['POST'])
+@jwt_required
+def create_veto_request():
+    """Create a veto request (Anna requests, stored in DB)."""
+    try:
+        data = request.get_json(silent=True) or {}
+        item = (data.get("item") or "").strip()
+        amount = data.get("amount")
+        reason = (data.get("reason") or "").strip()
+        if not item or reason is None:
+            return jsonify({"error": "Item and reason are required"}), 400
+        try:
+            amount = float(amount)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Amount must be a number"}), 400
+        user = user_model.find_by_id(request.user_id)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        req_id = veto_request_model.create(
+            user_id=request.user_id,
+            username=user.get("username", ""),
+            name=user.get("name", ""),
+            item=item,
+            amount=amount,
+            reason=reason,
+        )
+        doc = veto_request_model.get_by_id(req_id)
+        return jsonify({"message": "Sent to Veto Court!", "vetoRequest": _format_veto_request(doc)}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/veto-requests/<request_id>/vote', methods=['POST'])
+@jwt_required
+def vote_veto_request(request_id):
+    """Vote Go for it or Veto on a request. Requester cannot vote on their own."""
+    try:
+        data = request.get_json(silent=True) or {}
+        vote = (data.get("vote") or "").strip().lower()
+        if vote not in ("approve", "veto"):
+            return jsonify({"error": "Vote must be 'approve' or 'veto'"}), 400
+        doc = veto_request_model.get_by_id(request_id)
+        if not doc:
+            return jsonify({"error": "Veto request not found"}), 404
+        if str(doc.get("user_id")) == request.user_id:
+            return jsonify({"error": "You cannot vote on your own request"}), 400
+        doc = veto_request_model.add_vote(request_id, request.user_id, vote)
+        if not doc:
+            return jsonify({"error": "Veto request not found"}), 404
+        rejected = doc.get("status") == "rejected"
+        return jsonify({
+            "message": "Rejected" if rejected else "Vote recorded",
+            "rejected": rejected,
+            "vetoRequest": _format_veto_request(doc),
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 # ============================================================================
 # BANKING (NESSIE API) ROUTES

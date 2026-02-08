@@ -12,10 +12,12 @@ import QuestCard from './components/Quests/QuestCard';
 import ProfileScreen from './components/Profile/ProfileScreen';
 import SocialFeed from './components/Social/SocialFeed';
 import VetoRequest from './components/Social/VetoRequest';
+import AddVetoRequest from './components/Social/AddVetoRequest';
 import AIChat from './components/Chat/AIChat';
 import GameWorld from './components/World/GameWorld';
 import Confetti from './components/Feedback/Confetti';
-import { MOCK_FEED, MOCK_VETO_REQUESTS, MOCK_FRIENDS } from './constants';
+import { MOCK_FEED, MOCK_FRIENDS } from './constants';
+import { vetoService } from './services/api';
 import toast from 'react-hot-toast';
 
 const pageVariants = {
@@ -44,9 +46,10 @@ export default function App() {
   const [showConfetti, setShowConfetti] = useState(false);
   const [nudgeNotification, setNudgeNotification] = useState(null);
   const [showFriendPicker, setShowFriendPicker] = useState(false);
+  const [showAddVeto, setShowAddVeto] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [feed] = useState(MOCK_FEED);
-  const [vetoRequests] = useState(MOCK_VETO_REQUESTS);
+  const [vetoRequests, setVetoRequests] = useState([]);
 
   const fullUser = useMemo(() => {
     if (!authUser) return null;
@@ -68,8 +71,20 @@ export default function App() {
   const hasGoals = (goals?.length ?? 0) > 0;
   const hasActiveGoal = appGoal != null;
 
+  const fetchVetoRequests = async () => {
+    try {
+      const { data } = await vetoService.getAll();
+      setVetoRequests(data.vetoRequests || []);
+    } catch (_) {
+      setVetoRequests([]);
+    }
+  };
+
   useEffect(() => {
-    if (authUser) fetchAll();
+    if (authUser) {
+      fetchAll();
+      fetchVetoRequests();
+    }
   }, [authUser]);
 
   const triggerConfetti = () => {
@@ -120,8 +135,30 @@ export default function App() {
     setShowFriendPicker(false);
   };
 
-  const handleVote = () => {
-    // Mock: could call API later
+  const handleAddVetoRequest = async ({ item, amount, reason }) => {
+    const { data } = await vetoService.create({ item, amount, reason });
+    if (data.vetoRequest) {
+      setVetoRequests((prev) => [data.vetoRequest, ...prev]);
+    }
+    toast.success('Sent to Veto Court! Friends can vote.');
+  };
+
+  const handleVote = async (requestId, vote) => {
+    const userId = fullUser?.id;
+    if (!userId) return;
+    const request = vetoRequests.find((r) => r.id === requestId);
+    if (!request || (request.votes ?? []).some((v) => v.userId === userId)) return;
+    try {
+      const { data } = await vetoService.vote(requestId, vote);
+      setVetoRequests((prev) => prev.filter((r) => r.id !== requestId));
+      if (data.rejected || vote === 'veto') {
+        toast.success('Rejected. Removed from your feed.');
+      } else {
+        toast.success('Approved. Removed from your feed.');
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Vote failed');
+    }
   };
 
   if (authLoading || (authUser && gameLoading && !appGoal)) {
@@ -172,6 +209,15 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      <AnimatePresence>
+        {showAddVeto && (
+          <AddVetoRequest
+            user={fullUser}
+            onAdd={handleAddVetoRequest}
+            onClose={() => setShowAddVeto(false)}
+          />
+        )}
+      </AnimatePresence>
       <AnimatePresence>
         {showFriendPicker && (
           <motion.div
@@ -298,7 +344,16 @@ export default function App() {
           {activeTab === 'social' && (
             <motion.div key="social" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="space-y-8">
               <section className="space-y-6">
-                <h2 className="font-heading text-2xl uppercase tracking-tighter">Veto Court</h2>
+                <div className="flex justify-between items-center">
+                  <h2 className="font-heading text-2xl uppercase tracking-tighter">Veto Court</h2>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddVeto(true)}
+                    className="editorial-button py-2 px-4 text-xs uppercase"
+                  >
+                    Ask for a vote
+                  </button>
+                </div>
                 {vetoRequests.map((v) => (
                   <VetoRequest key={v.id} request={v} onVote={handleVote} currentUserId={fullUser?.id} />
                 ))}

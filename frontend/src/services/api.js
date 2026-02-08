@@ -87,6 +87,16 @@ export const aiService = {
 };
 
 // ============================================================================
+// VETO REQUESTS (cross-user: Anna creates, Suhani sees)
+// ============================================================================
+
+export const vetoService = {
+  getAll: () => api.get('/veto-requests'),
+  create: (data) => api.post('/veto-requests', data),
+  vote: (requestId, vote) => api.post(`/veto-requests/${requestId}/vote`, { vote }),
+};
+
+// ============================================================================
 // BANKING SERVICES
 // ============================================================================
 

@@ -15,7 +15,25 @@ def hash_password(password):
 
 def verify_password(plain_password, hashed_password):
     """Verify a password against its hash"""
+    if not hashed_password:
+        return False
     return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+
+
+def check_user_password(plain_password, user_doc):
+    """
+    Verify password against a user document.
+    Supports both password_hash (bcrypt) and plain password (e.g. from insertdb_users).
+    """
+    if not user_doc or not plain_password:
+        return False
+    hashed = user_doc.get('password_hash')
+    if hashed:
+        return verify_password(plain_password, hashed)
+    plain = user_doc.get('password')
+    if plain is not None:
+        return plain_password == plain
+    return False
 
 def create_access_token(data):
     """Create a JWT access token"""

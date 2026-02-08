@@ -21,8 +21,16 @@ export default function AuthScreen({ onLoginSuccess }) {
       await login(username.trim(), password);
       onLoginSuccess?.();
     } catch (err) {
-      const msg = err.response?.data?.error
-        || (err.code === 'ERR_NETWORK' ? 'Cannot reach server. Is the backend running on port 5000?' : 'Login failed');
+      const res = err?.response;
+      console.error('Login error:', res?.status, res?.data || err.message);
+      const backendMsg = res?.data?.error;
+      const msg =
+        backendMsg ||
+        (err.code === 'ERR_NETWORK'
+          ? 'Cannot reach server. Is the backend running on port 5001?'
+          : res?.status === 401
+            ? 'Invalid username or password'
+            : `Login failed${res?.status ? ` (${res.status})` : ''}`);
       toast.error(msg);
     } finally {
       setLoading(false);
