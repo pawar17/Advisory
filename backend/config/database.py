@@ -21,11 +21,11 @@ class Database:
             self.db = self.client[db_name]
 
             self.client.admin.command('ping')
-            print("✓ Successfully connected to MongoDB!")
+            print("Successfully connected to MongoDB!")
 
             return self.db
         except Exception as e:
-            print(f"✗ Failed to connect to MongoDB: {e}")
+            print(f"Failed to connect to MongoDB: {e}")
             raise
 
     def close(self):
