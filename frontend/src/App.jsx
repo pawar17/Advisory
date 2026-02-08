@@ -8,6 +8,7 @@ import HUD from './components/Layout/HUD';
 import BottomNav from './components/Layout/BottomNav';
 import StatCard from './components/Dashboard/StatCard';
 import GoalProgress from './components/Dashboard/GoalProgress';
+import Leaderboard from './components/Dashboard/Leaderboard';
 import QuestCard from './components/Quests/QuestCard';
 import ProfileScreen from './components/Profile/ProfileScreen';
 import SocialFeed from './components/Social/SocialFeed';
@@ -33,6 +34,7 @@ export default function App() {
     stats,
     appGoal,
     appQuests,
+    leaderboard,
     loading: gameLoading,
     createGoal,
     contribute,
@@ -350,6 +352,16 @@ export default function App() {
                   ))}
                 </div>
               </section>
+            </motion.div>
+          )}
+
+          {activeTab === 'leaderboard' && (
+            <motion.div key="leaderboard" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="space-y-8">
+              <div className="space-y-2">
+                <h2 className="font-heading text-2xl uppercase tracking-tighter">Leaderboard</h2>
+                <p className="font-mono text-[10px] text-gray-500 uppercase tracking-widest font-bold">Top savers by XP</p>
+              </div>
+              <Leaderboard leaderboard={leaderboard} currentUserId={fullUser?.id} limit={20} />
             </motion.div>
           )}
 

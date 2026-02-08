@@ -4,6 +4,7 @@ const navItems = [
   { id: 'home', icon: '🏠', label: 'Main' },
   { id: 'play', icon: '🏗️', label: 'Play' },
   { id: 'quests', icon: '⭐', label: 'Quests' },
+  { id: 'leaderboard', icon: '🏆', label: 'Rank' },
   { id: 'social', icon: '👥', label: 'Court' },
   { id: 'profile', icon: '👤', label: 'Self' },
 ];
