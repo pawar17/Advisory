@@ -22,8 +22,11 @@ from utils.ai_calculator import calculate_levels_with_ai, ai_chat_assistant
 from utils.statement_parser import (
     parse_and_extract_transactions,
     categorize_transactions_with_ai,
-    analyze_spending_and_suggest_daily,
-    generate_quests_from_spending,
+)
+from data.mock_statement_v4 import (
+    get_mock_spending_analysis,
+    get_mock_suggestion,
+    get_mock_quests_from_spending,
 )
 from models.bank_statement import BankStatement
 from models.nudge import Nudge
@@ -749,33 +752,27 @@ def delete_bank_statement(statement_id):
 @app.route('/api/bank-statements/spending-analysis', methods=['GET'])
 @jwt_required
 def spending_analysis():
-    """Get spending by category and suggested daily savings (uses active goal)."""
+    """Get spending by category and suggested daily savings. Uses hardcoded v4 data."""
     try:
+        mock = get_mock_spending_analysis()
+        spending_by_category = mock["spendingByCategory"]
+        transaction_count = mock["transactionCount"]
+
         goals = goal_model.get_user_goals(request.user_id, status="active")
         goal = goals[0] if goals else None
-        target_amount = goal.get("target_amount", 0) if goal else 0
-        current_amount = goal.get("current_amount", 0) if goal else 0
+        target_amount = float(goal.get("target_amount", 0) or 0) if goal else 0
+        current_amount = float(goal.get("current_amount", 0) or 0) if goal else 0
         target_date = goal.get("target_date") if goal else None
         goal_name = goal.get("goal_name", "") if goal else ""
 
-        transactions = bank_statement_model.get_user_transactions(request.user_id, limit=500)
-        transaction_count = len(transactions)
-        by_cat = {}
-        for t in transactions:
-            amt = t.get("amount", 0)
-            if amt is not None and float(amt) < 0:
-                c = t.get("category", "other")
-                by_cat[c] = by_cat.get(c, 0) + abs(float(amt))
+        suggestion = get_mock_suggestion(target_amount, current_amount, target_date, goal_name)
 
-        suggestion = analyze_spending_and_suggest_daily(
-            transactions, target_amount, target_date, current_amount
-        )
         return jsonify({
-            "spendingByCategory": by_cat,
+            "spendingByCategory": spending_by_category,
             "suggestion": suggestion,
             "goalName": goal_name,
             "transactionCount": transaction_count,
-            "hasStatementData": transaction_count > 0,
+            "hasStatementData": True,
         }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -878,15 +875,19 @@ def _format_goal(g):
 @app.route('/api/quests/generated', methods=['GET'])
 @jwt_required
 def get_generated_quests():
-    """Get personalized quest suggestions based on user's spending habits."""
+    """Get personalized quest suggestions from hardcoded v4 spending patterns."""
     try:
-        by_cat = bank_statement_model.get_spending_by_category(request.user_id, days=90)
-        # Pass positive amounts (expense totals) so Gemini can suggest quests to cut spending
-        spending = {d["_id"]: abs(d["total"]) for d in by_cat}
         goals = goal_model.get_user_goals(request.user_id, status="active")
         goal_name = goals[0].get("goal_name", "") if goals else ""
-        quests = generate_quests_from_spending(spending, goal_name)
-        return jsonify({"quests": quests}), 200
+        quests = get_mock_quests_from_spending(goal_name)
+        mock = get_mock_spending_analysis()
+        return jsonify({
+            "quests": quests,
+            "basedOn": {
+                "transactionCount": mock["transactionCount"],
+                "summary": f"Based on {mock['transactionCount']} transactions from your statement. Quests target your top spending categories.",
+            },
+        }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

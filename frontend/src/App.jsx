@@ -62,6 +62,7 @@ export default function App() {
   const [nudgesReceived, setNudgesReceived] = useState([]);
   const [dismissedNudgeId, setDismissedNudgeId] = useState(null);
   const [generatedQuests, setGeneratedQuests] = useState([]);
+  const [generatedQuestsBasedOn, setGeneratedQuestsBasedOn] = useState(null);
 
   const fullUser = useMemo(() => {
     if (!authUser) return null;
@@ -124,7 +125,15 @@ export default function App() {
 
   useEffect(() => {
     if (activeTab === 'quests') {
-      questService.getGenerated().then(({ data }) => setGeneratedQuests(data.quests || [])).catch(() => setGeneratedQuests([]));
+      questService.getGenerated()
+        .then(({ data }) => {
+          setGeneratedQuests(data.quests || []);
+          setGeneratedQuestsBasedOn(data.basedOn || null);
+        })
+        .catch(() => {
+          setGeneratedQuests([]);
+          setGeneratedQuestsBasedOn(null);
+        });
     }
   }, [activeTab]);
 
@@ -454,7 +463,9 @@ export default function App() {
               {generatedQuests.length > 0 && (
                 <section className="space-y-4">
                   <h3 className="font-heading text-sm uppercase tracking-widest border-b-2 border-brand-black pb-1">Suggested for you (from your spending)</h3>
-                  <p className="text-[10px] text-gray-500">Personalized quest ideas based on your uploaded bank statements. Upload statements in Profile → Bank Statements to improve suggestions.</p>
+                  <p className="text-[10px] text-gray-500">
+                    {generatedQuestsBasedOn?.summary ?? 'Personalized quest ideas based on your spending. Upload statements in Profile → Bank Statements to improve suggestions.'}
+                  </p>
                   <div className="space-y-3">
                     {generatedQuests.map((q, i) => (
                       <div key={i} className="editorial-card p-4">
