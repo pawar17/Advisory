@@ -17,13 +17,8 @@ import AddVetoRequest from './components/Social/AddVetoRequest';
 import AIChat from './components/Chat/AIChat';
 import GameWorld from './components/World/GameWorld';
 import Confetti from './components/Feedback/Confetti';
-<<<<<<< HEAD
-import { MOCK_FEED } from './constants';
-import { vetoService, friendsService, nudgeService, questService } from './services/api';
-=======
 import { MOCK_FEED, MOCK_FRIENDS } from './constants';
-import { vetoService, gamificationService } from './services/api';
->>>>>>> a167139f283f7a0b1df90efcac1ec682316ddb59
+import { vetoService, gamificationService, friendsService, nudgeService, questService } from './services/api';
 import toast from 'react-hot-toast';
 
 const pageVariants = {
@@ -63,10 +58,12 @@ export default function App() {
   const [dismissedNudgeId, setDismissedNudgeId] = useState(null);
   const [generatedQuests, setGeneratedQuests] = useState([]);
   const [generatedQuestsBasedOn, setGeneratedQuestsBasedOn] = useState(null);
+  const [leaderboardMode, setLeaderboardMode] = useState('all');
+  const [friendsLeaderboard, setFriendsLeaderboard] = useState([]);
 
   const fullUser = useMemo(() => {
     if (!authUser) return null;
-    const rank = '#?';
+    const rank = stats?.rank != null ? stats.rank : null;
     return {
       id: authUser._id ?? authUser.id,
       name: authUser.name,
@@ -76,7 +73,7 @@ export default function App() {
         points: stats?.points ?? 0,
         currency: stats?.currency ?? 0,
         streak: stats?.streak ?? 0,
-        rank,
+        rank: rank != null ? `#${rank}` : '—',
       },
     };
   }, [authUser, stats]);
@@ -90,6 +87,15 @@ export default function App() {
       setVetoRequests(data.vetoRequests || []);
     } catch (_) {
       setVetoRequests([]);
+    }
+  };
+
+  const fetchFriendsLeaderboard = async () => {
+    try {
+      const { data } = await gamificationService.getFriendsLeaderboard(50);
+      setFriendsLeaderboard(data.leaderboard || []);
+    } catch (_) {
+      setFriendsLeaderboard([]);
     }
   };
 
@@ -112,9 +118,14 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (leaderboardMode === 'friends') fetchFriendsLeaderboard();
+  }, [leaderboardMode]);
+
+  useEffect(() => {
     if (authUser) {
       fetchAll();
       fetchVetoRequests();
+      fetchFriendsLeaderboard();
       fetchNudges();
     }
   }, [authUser]);
@@ -426,13 +437,15 @@ export default function App() {
                 goalType={appGoal?.category ?? 'other'}
                 progressPercent={appGoal ? (appGoal.currentAmount / appGoal.targetAmount) * 100 : 0}
                 currency={fullUser?.stats?.currency ?? 0}
-                onPlaceItem={async () => {
+                initialPlacements={stats?.pop_city_placements}
+                onPlaceItem={async (index, item) => {
                   try {
-                    const { data } = await gamificationService.placePopCityItem();
+                    const { data } = await gamificationService.placePopCityItem({ index, item });
                     await fetchStats();
                     if (data?.points_earned != null) {
                       toast.success(`Placed! +${data.points_earned} XP, −25 coins`);
                     }
+                    return data?.placements;
                   } catch (err) {
                     const msg = err.response?.data?.error || 'Could not place item';
                     toast.error(msg);
@@ -492,9 +505,30 @@ export default function App() {
             <motion.div key="leaderboard" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="space-y-8">
               <div className="space-y-2">
                 <h2 className="font-heading text-2xl uppercase tracking-tighter">Leaderboard</h2>
-                <p className="font-mono text-[10px] text-gray-500 uppercase tracking-widest font-bold">Top savers by XP</p>
+                <p className="font-mono text-[10px] text-gray-500 uppercase tracking-widest font-bold">Ranked by XP</p>
               </div>
-              <Leaderboard leaderboard={leaderboard} currentUserId={fullUser?.id} limit={20} />
+              <div className="flex gap-2 p-1 bg-white rounded-full border-2 border-brand-black w-fit">
+                <button
+                  type="button"
+                  onClick={() => setLeaderboardMode('all')}
+                  className={`px-4 py-2 rounded-full text-xs font-mono font-bold uppercase transition-colors ${leaderboardMode === 'all' ? 'bg-brand-pink text-brand-black' : 'text-gray-500 hover:bg-gray-100'}`}
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLeaderboardMode('friends')}
+                  className={`px-4 py-2 rounded-full text-xs font-mono font-bold uppercase transition-colors ${leaderboardMode === 'friends' ? 'bg-brand-pink text-brand-black' : 'text-gray-500 hover:bg-gray-100'}`}
+                >
+                  Friends
+                </button>
+              </div>
+              <Leaderboard
+                leaderboard={leaderboardMode === 'friends' ? friendsLeaderboard : leaderboard}
+                currentUserId={fullUser?.id}
+                limit={leaderboardMode === 'friends' ? 50 : 20}
+                emptyMessage={leaderboardMode === 'friends' ? 'Add friends to see rankings by XP.' : 'No rankings yet. Earn XP to climb!'}
+              />
             </motion.div>
           )}
 

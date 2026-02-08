@@ -79,7 +79,8 @@ export const questService = {
 
 export const gamificationService = {
   getLeaderboard: (limit = 100) => api.get(`/gamification/leaderboard?limit=${limit}`),
-  placePopCityItem: () => api.post('/gamification/pop-city-place'),
+  getFriendsLeaderboard: (limit = 100) => api.get(`/gamification/leaderboard/friends?limit=${limit}`),
+  placePopCityItem: (payload) => api.post('/gamification/pop-city-place', payload || {}),
 };
 
 // ============================================================================

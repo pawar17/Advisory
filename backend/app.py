@@ -199,11 +199,18 @@ def get_game_stats():
         except Exception:
             streak = user.get('current_streak', 0)
 
+        # Rank by XP: 1 + number of users with strictly more game_points
+        my_points = user.get('game_points', 0)
+        above = user_model.collection.count_documents({"game_points": {"$gt": my_points}})
+        rank = above + 1
+
         return jsonify({
             "points": user.get('game_points', 0),
             "currency": user.get('game_currency', 0),
             "streak": streak,
-            "longest_streak": user.get('longest_streak', 0)
+            "longest_streak": user.get('longest_streak', 0),
+            "rank": rank,
+            "pop_city_placements": user.get('pop_city_placements') or {},
         }), 200
 
     except Exception as e:
@@ -217,7 +224,7 @@ POP_CITY_POINTS = 25
 @app.route('/api/gamification/pop-city-place', methods=['POST'])
 @jwt_required
 def pop_city_place():
-    """Spend 25 currency and add 25 XP for placing one item in Pop City. Returns updated stats."""
+    """Spend 25 currency, add 25 XP, and save the placement in Pop City. Body: { index: number, item: string }."""
     try:
         user = user_model.find_by_id(request.user_id)
         if not user:
@@ -225,6 +232,17 @@ def pop_city_place():
         current_currency = user.get('game_currency', 0)
         if current_currency < POP_CITY_COST:
             return jsonify({"error": "Not enough coins", "currency": current_currency}), 400
+        data = request.get_json(silent=True) or {}
+        index = data.get('index')
+        item = data.get('item')
+        if index is None or not isinstance(index, (int, float)) or index < 0 or index >= 25:
+            return jsonify({"error": "Invalid index"}), 400
+        index = int(index)
+        if not item or not isinstance(item, str):
+            return jsonify({"error": "Invalid item"}), 400
+        placements = dict(user.get('pop_city_placements') or {})
+        placements[str(index)] = item
+        user_model.update_user(request.user_id, {"pop_city_placements": placements})
         user_model.update_game_stats(request.user_id, points=POP_CITY_POINTS, currency=-POP_CITY_COST)
         user = user_model.find_by_id(request.user_id)
         try:
@@ -234,6 +252,7 @@ def pop_city_place():
         return jsonify({
             "points_earned": POP_CITY_POINTS,
             "currency_spent": POP_CITY_COST,
+            "placements": user.get('pop_city_placements') or {},
             "stats": {
                 "points": user.get('game_points', 0),
                 "currency": user.get('game_currency', 0),
@@ -247,25 +266,55 @@ def pop_city_place():
 
 @app.route('/api/gamification/leaderboard', methods=['GET'])
 def get_leaderboard():
-    """Get leaderboard rankings"""
+    """Get leaderboard rankings by XP (game_points)."""
     try:
         limit = int(request.args.get('limit', 100))
         leaderboard = user_model.get_leaderboard(limit=limit)
-
-        # Format response
         rankings = []
         for i, user in enumerate(leaderboard):
             rankings.append({
                 "rank": i + 1,
                 "user_id": str(user['_id']),
-                "username": user['username'],
-                "name": user['name'],
+                "username": user.get('username', ''),
+                "name": user.get('name', ''),
                 "points": user.get('game_points', 0),
                 "streak": user.get('current_streak', 0)
             })
-
         return jsonify({"leaderboard": rankings}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
+
+@app.route('/api/gamification/leaderboard/friends', methods=['GET'])
+@jwt_required
+def get_friends_leaderboard():
+    """Get current user + friends ranked by XP."""
+    try:
+        from bson import ObjectId
+        user = user_model.find_by_id(request.user_id)
+        if not user:
+            return jsonify({"leaderboard": []}), 200
+        friend_ids = list(user.get("friends") or [])
+        current_oid = ObjectId(request.user_id) if isinstance(request.user_id, str) else request.user_id
+        ids_to_fetch = [current_oid] + [
+            fid if isinstance(fid, ObjectId) else ObjectId(fid) for fid in friend_ids
+        ]
+        users = list(user_model.collection.find(
+            {"_id": {"$in": ids_to_fetch}},
+            {"username": 1, "name": 1, "game_points": 1, "current_streak": 1}
+        ))
+        users.sort(key=lambda u: u.get('game_points', 0), reverse=True)
+        rankings = []
+        for i, u in enumerate(users):
+            rankings.append({
+                "rank": i + 1,
+                "user_id": str(u['_id']),
+                "username": u.get('username', ''),
+                "name": u.get('name', ''),
+                "points": u.get('game_points', 0),
+                "streak": u.get('current_streak', 0)
+            })
+        return jsonify({"leaderboard": rankings}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

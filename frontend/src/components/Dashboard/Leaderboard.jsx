@@ -1,12 +1,12 @@
 import { motion } from 'framer-motion';
 
-export default function Leaderboard({ leaderboard = [], currentUserId, limit = 10 }) {
+export default function Leaderboard({ leaderboard = [], currentUserId, limit = 10, emptyMessage = 'No rankings yet. Earn XP to climb!' }) {
   const list = (leaderboard || []).slice(0, limit);
   if (list.length === 0) {
     return (
       <div className="editorial-card p-6 border-2 border-dashed border-brand-black/20 text-center">
         <p className="text-2xl mb-2">🏆</p>
-        <p className="font-mono text-[10px] uppercase font-bold text-gray-500">No rankings yet. Earn XP to climb!</p>
+        <p className="font-mono text-[10px] uppercase font-bold text-gray-500">{emptyMessage}</p>
       </div>
     );
   }

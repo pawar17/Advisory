@@ -1,64 +1,68 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { WORLD_ITEMS } from '../../constants';
 
 const ITEM_COST = 25;
 
-function getGridCellIndex(rect, clientX, clientY) {
-  const { left, top, width: w, height: h } = rect;
-  const x = clientX - left;
-  const y = clientY - top;
-  const col = Math.floor((x / w) * 5);
-  const row = Math.floor((y / h) * 5);
-  const colClamped = Math.max(0, Math.min(4, col));
-  const rowClamped = Math.max(0, Math.min(4, row));
-  const index = rowClamped * 5 + colClamped;
-  return { col: colClamped, row: rowClamped, index };
+function getCellIndexFromPoint(clientX, clientY) {
+  const elements = document.elementsFromPoint(clientX, clientY);
+  for (const el of elements) {
+    const cell = el.closest ? el.closest('[data-cell-index]') : null;
+    if (cell) {
+      const idx = cell.getAttribute('data-cell-index');
+      if (idx != null) return parseInt(idx, 10);
+    }
+  }
+  return null;
 }
 
-function isInsideGrid(rect, clientX, clientY) {
-  const { left, top, width: w, height: h } = rect;
-  const x = clientX - left;
-  const y = clientY - top;
-  return x >= 0 && x <= w && y >= 0 && y <= h;
-}
-
-export default function GameWorld({ goalType, progressPercent, currency, onPlaceItem, onUpdateCurrency, onAddPoints }) {
-  const [placedItems, setPlacedItems] = useState({});
+export default function GameWorld({ goalType, progressPercent, currency, initialPlacements, onPlaceItem, onUpdateCurrency, onAddPoints }) {
+  const normalizedInitial = (initialPlacements && typeof initialPlacements === 'object')
+    ? Object.fromEntries(Object.entries(initialPlacements).map(([k, v]) => [String(k), v]))
+    : {};
+  const [placedItems, setPlacedItems] = useState(() => ({ ...normalizedInitial }));
   const [hoveredTile, setHoveredTile] = useState(null);
   const [snapBackKeys, setSnapBackKeys] = useState({});
   const gridRef = useRef(null);
   const lastPointerRef = useRef({ x: 0, y: 0 });
   const hoveredTileRef = useRef(null);
 
+  const initialSyncedRef = useRef(false);
+  useEffect(() => {
+    if (initialPlacements == null || initialSyncedRef.current) return;
+    initialSyncedRef.current = true;
+    setPlacedItems((prev) => ({ ...(initialPlacements || {}), ...prev }));
+  }, [initialPlacements]);
+
   const unlockedCount = Math.max(4, Math.floor(progressPercent / 4));
   const items = WORLD_ITEMS[goalType] || WORLD_ITEMS.other;
   const canAfford = currency >= ITEM_COST;
 
   const handleDragEnd = (e, info, item) => {
-    const dropIndex = hoveredTileRef.current;
-    hoveredTileRef.current = null;
-    setHoveredTile(null);
-    if (!gridRef.current) {
-      setSnapBackKeys((prev) => ({ ...prev, [item]: (prev[item] ?? 0) + 1 }));
-      return;
-    }
-    const rect = gridRef.current.getBoundingClientRect();
     const last = lastPointerRef.current;
     const clientX = typeof e?.clientX === 'number' ? e.clientX : (info?.point?.x ?? last.x);
     const clientY = typeof e?.clientY === 'number' ? e.clientY : (info?.point?.y ?? last.y);
-    const { index } = getGridCellIndex(rect, clientX, clientY);
-    const inside = isInsideGrid(rect, clientX, clientY);
-    const indexToUse = dropIndex != null ? dropIndex : (inside ? index : -1);
+    const dropFromHover = hoveredTileRef.current;
+    hoveredTileRef.current = null;
+    setHoveredTile(null);
+
+    const indexFromPoint = getCellIndexFromPoint(clientX, clientY);
+    const indexToUse = dropFromHover ?? indexFromPoint;
+    const validIndex = indexToUse != null && !Number.isNaN(indexToUse) && indexToUse >= 0 && indexToUse < 25;
     const validDrop =
-      indexToUse >= 0 &&
+      validIndex &&
       indexToUse < unlockedCount &&
       !placedItems[indexToUse] &&
       canAfford;
+
     if (validDrop) {
       setPlacedItems((prev) => ({ ...prev, [indexToUse]: item }));
       if (onPlaceItem) {
-        onPlaceItem().catch(() => {
+        onPlaceItem(indexToUse, item).then((placements) => {
+          if (placements && typeof placements === 'object') {
+            setPlacedItems((prev) => ({ ...prev, ...placements }));
+          }
+        }).catch(() => {
           setPlacedItems((prev) => {
             const next = { ...prev };
             delete next[indexToUse];
@@ -76,14 +80,12 @@ export default function GameWorld({ goalType, progressPercent, currency, onPlace
   };
 
   const onDrag = (e, info) => {
-    if (!gridRef.current) return;
-    const rect = gridRef.current.getBoundingClientRect();
     const clientX = typeof e?.clientX === 'number' ? e.clientX : info?.point?.x;
     const clientY = typeof e?.clientY === 'number' ? e.clientY : info?.point?.y;
     if (clientX != null && clientY != null) lastPointerRef.current = { x: clientX, y: clientY };
     if (clientX == null || clientY == null) return;
-    const { index } = getGridCellIndex(rect, clientX, clientY);
-    if (isInsideGrid(rect, clientX, clientY) && index < unlockedCount && !placedItems[index]) {
+    const index = getCellIndexFromPoint(clientX, clientY);
+    if (index != null && index >= 0 && index < unlockedCount && !placedItems[index]) {
       hoveredTileRef.current = index;
       setHoveredTile(index);
     } else {
@@ -106,6 +108,7 @@ export default function GameWorld({ goalType, progressPercent, currency, onPlace
           {Array(25).fill(null).map((_, i) => (
             <div
               key={i}
+              data-cell-index={i}
               className={`relative w-full aspect-square border border-brand-black/5 flex items-center justify-center rounded-md sm:rounded-lg overflow-hidden ${
                 i < unlockedCount ? (hoveredTile === i ? 'bg-brand-pink' : 'bg-white/90') : 'bg-gray-800/10 grayscale'
               }`}
