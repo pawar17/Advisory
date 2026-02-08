@@ -209,7 +209,7 @@ Advisory/
 4. [ ] Run `npm run dev` to start frontend
 5. [ ] Test login with demo users
 6. [ ] Test all features (Dashboard, Quests, Leaderboard, **Profile**)
-7. [ ] Game UI style from GoogleStudio applied (SavePop branding, editorial cards, coins/XP in header)
+7. [ ] Game UI style from GoogleStudio applied (XPense branding, editorial cards, coins/XP in header)
 8. [ ] Profile: view stats, edit name, see active goal; currency/stats refresh after contribute and quest complete
 
 ### For Suhani (Integration):

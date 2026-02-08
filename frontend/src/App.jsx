@@ -45,6 +45,7 @@ export default function App() {
     fetchStats,
     fetchGoals,
     fetchQuests,
+    mergeStats,
   } = useGame();
 
   const [activeTab, setActiveTab] = useState('home');
@@ -57,6 +58,7 @@ export default function App() {
   const [feed] = useState(MOCK_FEED);
   const [vetoRequests, setVetoRequests] = useState([]);
   const [friends, setFriends] = useState([]);
+  const [nudgedUserIds, setNudgedUserIds] = useState([]);
   const [nudgesReceived, setNudgesReceived] = useState([]);
   const [dismissedNudgeId, setDismissedNudgeId] = useState(null);
   const [generatedQuests, setGeneratedQuests] = useState([]);
@@ -77,6 +79,13 @@ export default function App() {
         currency: stats?.currency ?? 0,
         streak: stats?.streak ?? 0,
         rank: rank != null ? `#${rank}` : '—',
+        vetoTokens: stats?.veto_tokens ?? 0,
+        vetoEarned: stats?.veto_earned ?? 0,
+        vetoUsed: stats?.veto_used ?? 0,
+        popCityPlacementCount: stats?.pop_city_placement_count ?? 0,
+        approveTokens: stats?.approve_tokens ?? 0,
+        approveEarned: stats?.approve_earned ?? 0,
+        approveUsed: stats?.approve_used ?? 0,
       },
     };
   }, [authUser, stats]);
@@ -134,7 +143,10 @@ export default function App() {
   }, [authUser]);
 
   useEffect(() => {
-    if (showFriendPicker) fetchFriends();
+    if (showFriendPicker) {
+      fetchFriends();
+      nudgeService.getSentToUserIds().then(({ data }) => setNudgedUserIds(data.sentToUserIds || [])).catch(() => setNudgedUserIds([]));
+    }
   }, [showFriendPicker]);
 
   useEffect(() => {
@@ -148,6 +160,13 @@ export default function App() {
           setGeneratedQuests([]);
           setGeneratedQuestsBasedOn(null);
         });
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'social') {
+      fetchStats();
+      fetchVetoRequests();
     }
   }, [activeTab]);
 
@@ -200,6 +219,7 @@ export default function App() {
         goalId: appGoal?.id ?? goals?.[0]?._id,
         goalName: appGoal?.name ?? goals?.[0]?.goal_name ?? 'your goal',
       });
+      setNudgedUserIds((prev) => (prev.includes(friend.id) ? prev : [...prev, friend.id]));
       setNudgeNotification(friend.name || friend.username);
       setTimeout(() => setNudgeNotification(null), 3000);
       setShowFriendPicker(false);
@@ -217,11 +237,17 @@ export default function App() {
   };
 
   const handleAddVetoRequest = async ({ item, amount, reason }) => {
-    const { data } = await vetoService.create({ item, amount, reason });
-    if (data.vetoRequest) {
-      setVetoRequests((prev) => [data.vetoRequest, ...prev]);
+    try {
+      const { data } = await vetoService.create({ item, amount, reason });
+      if (data.vetoRequest) {
+        setVetoRequests((prev) => [data.vetoRequest, ...prev]);
+        fetchStats();
+        setShowAddVeto(false);
+        toast.success('Sent to Veto Court! Friends can vote.');
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not send to Veto Court');
     }
-    toast.success('Sent to Veto Court! Friends can vote.');
   };
 
   const handleVote = async (requestId, vote) => {
@@ -232,6 +258,7 @@ export default function App() {
     try {
       const { data } = await vetoService.vote(requestId, vote);
       setVetoRequests((prev) => prev.filter((r) => r.id !== requestId));
+      fetchStats();
       if (data.rejected || vote === 'veto') {
         toast.success('Rejected. Removed from your feed.');
       } else {
@@ -347,27 +374,34 @@ export default function App() {
               onClick={(e) => e.stopPropagation()}
             >
               <h3 className="font-heading text-xl uppercase text-center">Nudge a Friend</h3>
-              <p className="text-[10px] text-center text-gray-500">Pick a friend to nudge them to keep pushing for their goals.</p>
+              <p className="text-[10px] text-center text-gray-500">Pick a friend to nudge. You can only nudge each friend once.</p>
               <div className="space-y-2 max-h-60 overflow-y-auto">
                 {friends.length === 0 ? (
                   <p className="text-xs text-gray-500 text-center py-4">Add friends from Profile to nudge them.</p>
                 ) : (
-                  friends.map((friend) => (
-                    <button
-                      key={friend.id}
-                      type="button"
-                      onClick={() => handleNudge(friend)}
-                      className="w-full flex items-center gap-3 p-3 border-2 border-brand-black/10 rounded-2xl hover:bg-brand-yellow"
-                    >
-                      <span className="w-10 h-10 bg-brand-lavender rounded-full flex items-center justify-center font-bold text-sm">
-                        {(friend.name || friend.username || '?')[0].toUpperCase()}
-                      </span>
-                      <div className="text-left">
-                        <p className="font-bold text-sm">{friend.name || friend.username}</p>
-                        <p className="text-[10px] text-gray-500">@{friend.username}</p>
-                      </div>
-                    </button>
-                  ))
+                  friends.map((friend) => {
+                    const alreadyNudged = nudgedUserIds.includes(friend.id);
+                    return (
+                      <button
+                        key={friend.id}
+                        type="button"
+                        onClick={() => !alreadyNudged && handleNudge(friend)}
+                        disabled={alreadyNudged}
+                        className={`w-full flex items-center gap-3 p-3 border-2 rounded-2xl text-left ${
+                          alreadyNudged ? 'border-brand-black/10 bg-gray-100 opacity-60 cursor-not-allowed' : 'border-brand-black/10 hover:bg-brand-yellow'
+                        }`}
+                      >
+                        <span className="w-10 h-10 bg-brand-lavender rounded-full flex items-center justify-center font-bold text-sm shrink-0">
+                          {(friend.name || friend.username || '?')[0].toUpperCase()}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-sm">{friend.name || friend.username}</p>
+                          <p className="text-[10px] text-gray-500">@{friend.username}</p>
+                          {alreadyNudged && <p className="text-[9px] font-mono uppercase text-gray-500 mt-0.5">Already nudged</p>}
+                        </div>
+                      </button>
+                    );
+                  })
                 )}
               </div>
               <button type="button" onClick={() => setShowFriendPicker(false)} className="w-full editorial-button py-3 text-xs uppercase">
@@ -386,8 +420,8 @@ export default function App() {
             <motion.div key="home" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="space-y-8">
               <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
                 <StatCard icon="⭐" value={String(fullUser?.stats?.points ?? 0)} label="Experience" color="bg-brand-lavender" />
-                <StatCard icon="🔥" value={String(fullUser?.stats?.streak ?? 0)} label="Streak" color="bg-brand-pink" />
-                <StatCard icon="🏆" value={fullUser?.stats?.rank ?? '—'} label="Rank" color="bg-brand-mint" />
+                <StatCard icon="🔥" value={String(fullUser?.stats?.streak ?? 0)} label="Streak" color="bg-brand-pink" onClick={() => handleTabChange('calendar')} />
+                <StatCard icon="🏆" value={fullUser?.stats?.rank ?? '—'} label="Rank" color="bg-brand-mint" onClick={() => handleTabChange('leaderboard')} />
               </div>
               {appGoal ? (
                 <GoalProgress goal={appGoal} onContribute={handleContribute} />
@@ -407,18 +441,6 @@ export default function App() {
                   </button>
                 </div>
                 <div className="space-y-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowFriendPicker(true)}
-                    className="w-full editorial-card p-4 flex items-center gap-4 border-2 border-brand-yellow bg-brand-yellow/30"
-                  >
-                    <span className="text-3xl">👋</span>
-                    <div className="text-left flex-1">
-                      <p className="font-bold text-sm uppercase">Nudge a friend</p>
-                      <p className="text-[10px] text-gray-600">Send a friend a nudge to keep pushing for their goals</p>
-                    </div>
-                    <span className="text-brand-black">→</span>
-                  </button>
                   {activeQuests.map((quest) => (
                     <QuestCard key={quest.id} quest={quest} onComplete={handleCompleteQuest} />
                   ))}
@@ -446,6 +468,7 @@ export default function App() {
                 onPlaceItem={async (index, item) => {
                   try {
                     const { data } = await gamificationService.placePopCityItem({ index, item });
+                    if (data?.stats) mergeStats(data.stats);
                     await fetchStats();
                     if (data?.points_earned != null) {
                       toast.success(`Placed! +${data.points_earned} XP, −25 coins`);
@@ -578,7 +601,7 @@ export default function App() {
           {activeTab === 'social' && (
             <motion.div key="social" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="space-y-8">
               <section className="space-y-6">
-                <div className="flex justify-between items-center">
+                <div className="flex flex-wrap justify-between items-center gap-2">
                   <h2 className="font-heading text-2xl uppercase tracking-tighter">Veto Court</h2>
                   <button
                     type="button"
@@ -588,9 +611,28 @@ export default function App() {
                     Ask for a vote
                   </button>
                 </div>
+                <p className="text-xs text-gray-500 font-mono">
+                  Say Go for it: fill one full row in Pop City (Play tab) to vote on 1 request; two full rows = 2 votes. You have {(fullUser?.stats?.approveTokens ?? 0)} vote{(fullUser?.stats?.approveTokens ?? 0) !== 1 ? 's' : ''} left.
+                </p>
                 {vetoRequests.map((v) => (
-                  <VetoRequest key={v.id} request={v} onVote={handleVote} currentUserId={fullUser?.id} />
+                  <VetoRequest key={v.id} request={v} onVote={handleVote} currentUserId={fullUser?.id} approveTokens={fullUser?.stats?.approveTokens ?? 0} />
                 ))}
+              </section>
+              <section className="space-y-4">
+                <h3 className="font-heading text-sm uppercase tracking-widest border-b-2 border-brand-black pb-1">Nudge a friend</h3>
+                <p className="text-[10px] text-gray-500 font-mono">Send a friend a nudge to keep pushing for their goals. You can only nudge each friend once.</p>
+                <button
+                  type="button"
+                  onClick={() => setShowFriendPicker(true)}
+                  className="w-full editorial-card p-4 flex items-center gap-4 border-2 border-brand-yellow bg-brand-yellow/30"
+                >
+                  <span className="text-3xl">👋</span>
+                  <div className="text-left flex-1">
+                    <p className="font-bold text-sm uppercase">Pick a friend to nudge</p>
+                    <p className="text-[10px] text-gray-600">One nudge per friend</p>
+                  </div>
+                  <span className="text-brand-black">→</span>
+                </button>
               </section>
               <section className="space-y-6">
                 <h2 className="font-heading text-2xl uppercase tracking-tighter">Feed</h2>

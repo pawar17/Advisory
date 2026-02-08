@@ -34,8 +34,9 @@ export default function GameWorld({ goalType, progressPercent, currency, initial
     setPlacedItems((prev) => ({ ...(initialPlacements || {}), ...prev }));
   }, [initialPlacements]);
 
-  // Unlock 1 box per 25 coins (100 coins = 4 boxes, etc.), max 25
-  const unlockedCount = Math.min(25, Math.floor(currency / ITEM_COST));
+  // Open slots = slots you've already filled + slots you can afford (1 per 25 coins), max 25
+  const placedCount = Object.keys(placedItems).length;
+  const unlockedCount = Math.min(25, placedCount + Math.floor(currency / ITEM_COST));
   const items = WORLD_ITEMS[goalType] || WORLD_ITEMS.other;
   const canAfford = currency >= ITEM_COST;
 

@@ -220,13 +220,33 @@ def get_game_stats():
         above = user_model.collection.count_documents({"game_points": {"$gt": my_points}})
         rank = above + 1
 
+        placements = user.get('pop_city_placements')
+        if not isinstance(placements, dict):
+            placements = {}
+        placements = dict(placements)
+        placement_count = len(placements)
+        # Every 4 items = 1 vote you can ask for (request a veto)
+        veto_earned = placement_count // 4
+        veto_tokens = veto_earned
+        # One full row in the grid = 1 "Go for it" you can give; two full rows = 2, etc.
+        approve_earned = _count_full_rows(placements)
+        approve_used = veto_request_model.count_approvals_by_user(request.user_id)
+        approve_tokens = max(0, approve_earned - approve_used)
+
         return jsonify({
             "points": user.get('game_points', 0),
             "currency": user.get('game_currency', 0),
             "streak": streak,
             "longest_streak": user.get('longest_streak', 0),
             "rank": rank,
-            "pop_city_placements": user.get('pop_city_placements') or {},
+            "pop_city_placements": placements,
+            "veto_tokens": veto_tokens,
+            "veto_earned": veto_earned,
+            "veto_used": 0,
+            "pop_city_placement_count": placement_count,
+            "approve_tokens": approve_tokens,
+            "approve_earned": approve_earned,
+            "approve_used": approve_used,
         }), 200
 
     except Exception as e:
@@ -235,6 +255,21 @@ def get_game_stats():
 
 POP_CITY_COST = 25
 POP_CITY_POINTS = 25
+POP_CITY_ROWS = 5
+POP_CITY_COLS = 5
+
+
+def _count_full_rows(placements, rows=POP_CITY_ROWS, cols=POP_CITY_COLS):
+    """Number of complete rows in the 5x5 grid. One full row = 1 vote on someone else's veto."""
+    if not isinstance(placements, dict):
+        placements = {}
+    # Normalize keys to str so we count correctly whether DB has "0" or 0
+    keys = {str(k) for k in placements}
+    full = 0
+    for r in range(rows):
+        if all(str(r * cols + c) in keys for c in range(cols)):
+            full += 1
+    return full
 
 
 @app.route('/api/gamification/pop-city-place', methods=['POST'])
@@ -265,15 +300,33 @@ def pop_city_place():
             streak = daily_flow_model.calculate_streak(request.user_id)
         except Exception:
             streak = user.get('current_streak', 0)
+        placements_after = user.get('pop_city_placements')
+        if not isinstance(placements_after, dict):
+            placements_after = {}
+        placements_after = dict(placements_after)
+        placement_count = len(placements_after)
+        veto_earned = placement_count // 4
+        veto_tokens = veto_earned
+        approve_earned = _count_full_rows(placements_after)
+        approve_used = veto_request_model.count_approvals_by_user(request.user_id)
+        approve_tokens = max(0, approve_earned - approve_used)
         return jsonify({
             "points_earned": POP_CITY_POINTS,
             "currency_spent": POP_CITY_COST,
-            "placements": user.get('pop_city_placements') or {},
+            "placements": placements_after,
+            "veto_tokens": veto_tokens,
             "stats": {
                 "points": user.get('game_points', 0),
                 "currency": user.get('game_currency', 0),
                 "streak": streak,
                 "longest_streak": user.get('longest_streak', 0),
+                "veto_tokens": veto_tokens,
+                "veto_earned": veto_earned,
+                "veto_used": 0,
+                "pop_city_placement_count": placement_count,
+                "approve_tokens": approve_tokens,
+                "approve_earned": approve_earned,
+                "approve_used": approve_used,
             }
         }), 200
     except Exception as e:
@@ -695,7 +748,7 @@ def create_veto_request():
 @app.route('/api/veto-requests/<request_id>/vote', methods=['POST'])
 @jwt_required
 def vote_veto_request(request_id):
-    """Vote Go for it or Veto on a request. Requester cannot vote on their own."""
+    """Vote Go for it or Veto on a request. Requester cannot vote on their own. Go for it requires 5 items (one row) in Pop City."""
     try:
         data = request.get_json(silent=True) or {}
         vote = (data.get("vote") or "").strip().lower()
@@ -706,6 +759,17 @@ def vote_veto_request(request_id):
             return jsonify({"error": "Veto request not found"}), 404
         if str(doc.get("user_id")) == request.user_id:
             return jsonify({"error": "You cannot vote on your own request"}), 400
+        # "Go for it" only if you have at least one full row in Pop City; each full row = 1 vote on someone else's veto
+        if vote == "approve":
+            user = user_model.find_by_id(request.user_id)
+            raw = (user or {}).get("pop_city_placements")
+            placements = dict(raw) if isinstance(raw, dict) else {}
+            approve_earned = _count_full_rows(placements)
+            approve_used = veto_request_model.count_approvals_by_user(request.user_id)
+            if approve_earned - approve_used < 1:
+                return jsonify({
+                    "error": "Fill one full row in Pop City (Play tab) to vote Go for it on someone else's request. Two full rows = 2 votes."
+                }), 400
         doc = veto_request_model.add_vote(request_id, request.user_id, vote)
         if not doc:
             return jsonify({"error": "Veto request not found"}), 404
@@ -1119,12 +1183,26 @@ def send_nudge():
         if to_oid not in friend_ids and str(to_oid) not in [str(x) for x in friend_ids]:
             return jsonify({"error": "User is not in your friend list"}), 400
 
+        if nudge_model.has_nudged(request.user_id, to_user_id):
+            return jsonify({"error": "You can only nudge each friend once."}), 400
+
         nudge_id = nudge_model.create(request.user_id, to_user_id, goal_id, goal_name)
         to_user = user_model.find_by_id(to_user_id)
         return jsonify({
             "message": f"Sent nudge to {to_user.get('name') or to_user.get('username') or 'friend'}!",
             "nudgeId": str(nudge_id),
         }), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/nudges/sent', methods=['GET'])
+@jwt_required
+def get_nudges_sent():
+    """List of user ids the current user has already nudged (one nudge per friend only)."""
+    try:
+        ids = nudge_model.get_sent_to_user_ids(request.user_id)
+        return jsonify({"sentToUserIds": ids}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

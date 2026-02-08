@@ -51,7 +51,7 @@ export default function AuthScreen({ onLoginSuccess }) {
       <div className="mb-10 text-center space-y-4">
         <div className="text-6xl mb-4">✨</div>
         <h1 className="font-heading text-5xl md:text-6xl tracking-tighter uppercase leading-none text-brand-black">
-          SavePop
+          XPense
         </h1>
         <p className="font-mono text-[11px] text-gray-500 uppercase tracking-[0.3em]">
           The Editorial Savings Game

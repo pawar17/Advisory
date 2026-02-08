@@ -1,4 +1,4 @@
-# Start SavePop – Frontend + Backend
+# Start XPense – Frontend + Backend
 
 ## 1. MongoDB credentials in backend/.env
 

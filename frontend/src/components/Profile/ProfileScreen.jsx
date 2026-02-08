@@ -139,7 +139,7 @@ export default function ProfileScreen({ user, goal, onGoalsChange, refetchGoals 
         onClick={() => logout()}
         className="w-full py-4 text-red-500 text-[10px] font-mono font-bold uppercase tracking-widest"
       >
-        Sign Out of SavePop
+        Sign Out of XPense
       </button>
     </div>
   );

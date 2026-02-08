@@ -1,6 +1,6 @@
-# SavePop Frontend
+# XPense Frontend
 
-React + Vite app for the SavePop gamified savings game. All app code lives under `frontend/`.
+React + Vite app for the XPense gamified savings game. All app code lives under `frontend/`.
 
 ## Run locally
 

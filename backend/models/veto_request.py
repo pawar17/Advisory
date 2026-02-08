@@ -52,6 +52,19 @@ class VetoRequest:
         pending.sort(key=lambda d: d["created_at"], reverse=True)
         return pending[:limit]
 
+    def count_by_user(self, user_id):
+        """Number of veto requests created by this user (used = spent veto tokens)."""
+        if isinstance(user_id, str):
+            user_id = ObjectId(user_id)
+        return self.collection.count_documents({"user_id": user_id})
+
+    def count_approvals_by_user(self, user_id):
+        """Number of 'Go for it' (approve) votes this user has cast. One row (5 items) = 1 approve."""
+        uid = str(user_id) if isinstance(user_id, ObjectId) else str(user_id)
+        return self.collection.count_documents({
+            "votes": {"$elemMatch": {"userId": uid, "vote": "approve"}}
+        })
+
     def get_by_id(self, request_id):
         if isinstance(request_id, str):
             request_id = ObjectId(request_id)

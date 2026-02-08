@@ -1,8 +1,9 @@
 import { motion } from 'framer-motion';
 
-export default function VetoRequestCard({ request, onVote, currentUserId }) {
+export default function VetoRequestCard({ request, onVote, currentUserId, approveTokens = 0 }) {
   const isRequester = request.requesterId && currentUserId && String(request.requesterId) === String(currentUserId);
   const hasVoted = request.votes?.some((v) => v.userId === currentUserId);
+  const canApprove = approveTokens >= 1 && !hasVoted;
   const approveCount = request.votes?.filter((v) => v.vote === 'approve').length ?? 0;
   const vetoCount = request.votes?.filter((v) => v.vote === 'veto').length ?? 0;
   const status = request.status || 'pending';
@@ -43,10 +44,11 @@ export default function VetoRequestCard({ request, onVote, currentUserId }) {
       <div className="flex gap-3">
         <button
           type="button"
-          disabled={hasVoted}
-          onClick={() => onVote?.(request.id, 'approve')}
+          disabled={!canApprove}
+          onClick={() => canApprove && onVote?.(request.id, 'approve')}
+          title={!hasVoted && approveTokens < 1 ? 'Fill one full row in Pop City (Play tab) to vote Go for it on someone else\'s request' : undefined}
           className={`flex-1 py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1 ${
-            hasVoted ? 'bg-gray-100 text-gray-400' : 'bg-green-100 text-green-700 hover:bg-green-200'
+            !canApprove ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-green-100 text-green-700 hover:bg-green-200'
           }`}
         >
           ✅ Go for it ({approveCount})

@@ -18,7 +18,7 @@ export default function HUD({ user, goal, onAIClick, onBack }) {
           </button>
         )}
         <h1 className="font-heading text-2xl tracking-tighter uppercase leading-none text-brand-black italic underline decoration-brand-pink decoration-4 underline-offset-4">
-          SavePop
+          XPense
         </h1>
         <div className="flex flex-col gap-1 mt-1 max-w-[130px]">
           <div className="flex justify-between items-center text-[7px] font-mono font-black uppercase text-brand-black/40 tracking-widest">

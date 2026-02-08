@@ -54,7 +54,7 @@ export default function RegisterScreen({ onSuccess, onBackToLogin }) {
       <div className="mb-8 text-center space-y-4">
         <div className="text-5xl mb-2">✨</div>
         <h1 className="font-heading text-4xl md:text-5xl tracking-tighter uppercase leading-none text-brand-black">
-          SavePop
+          XPense
         </h1>
         <p className="font-mono text-[11px] text-gray-500 uppercase tracking-[0.3em]">
           Create account

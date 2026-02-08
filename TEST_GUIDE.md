@@ -1,4 +1,4 @@
-# Test Guide – SavePop App
+# Test Guide – XPense App
 
 ## Prerequisites
 

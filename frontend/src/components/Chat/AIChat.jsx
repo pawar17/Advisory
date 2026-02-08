@@ -14,7 +14,7 @@ export default function AIChat({ user, goal }) {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      text: "I'm your SavePop finance coach. 💡 Ask me about down payments, emergency funds, APR, or any money concept—I'll explain it in plain language.",
+      text: "I'm your XPense finance coach. 💡 Ask me about down payments, emergency funds, APR, or any money concept—I'll explain it in plain language.",
     },
   ]);
   const [input, setInput] = useState('');

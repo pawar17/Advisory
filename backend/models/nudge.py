@@ -11,6 +11,22 @@ class Nudge:
     def _create_indexes(self):
         self.collection.create_index("to_user_id")
         self.collection.create_index([("to_user_id", 1), ("read_at", 1)])
+        self.collection.create_index([("from_user_id", 1), ("to_user_id", 1)])
+
+    def has_nudged(self, from_user_id, to_user_id):
+        """True if from_user has already sent a nudge to to_user (one nudge per friend only)."""
+        if isinstance(from_user_id, str):
+            from_user_id = ObjectId(from_user_id)
+        if isinstance(to_user_id, str):
+            to_user_id = ObjectId(to_user_id)
+        return self.collection.count_documents({"from_user_id": from_user_id, "to_user_id": to_user_id}) > 0
+
+    def get_sent_to_user_ids(self, from_user_id, limit=500):
+        """List of user ids this user has already nudged."""
+        if isinstance(from_user_id, str):
+            from_user_id = ObjectId(from_user_id)
+        docs = self.collection.find({"from_user_id": from_user_id}, {"to_user_id": 1}).limit(limit)
+        return [str(d["to_user_id"]) for d in docs]
 
     def create(self, from_user_id, to_user_id, goal_id=None, goal_name=None):
         if isinstance(from_user_id, str):

@@ -138,7 +138,7 @@ def _is_google_ai_configured():
 def ai_chat_assistant(user_message, user_context):
     """
     AI chatbot that teaches finance concepts (down payments, emergency fund, APR, etc.)
-    for the SavePop savings app.
+    for the XPense savings app.
     """
     if not _is_google_ai_configured():
         return (
@@ -149,7 +149,7 @@ def ai_chat_assistant(user_message, user_context):
 
     try:
         prompt = f"""
-You are SavePop's friendly finance coach. Your main job is to teach personal finance concepts in simple, short ways so users can learn while they save.
+You are XPense's friendly finance coach. Your main job is to teach personal finance concepts in simple, short ways so users can learn while they save.
 
 You love explaining things like:
 - Down payment (what it is, why it matters, typical ranges like 10–20% for cars, 10–20% for homes)

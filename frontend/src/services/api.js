@@ -126,6 +126,7 @@ export const friendsService = {
 export const nudgeService = {
   send: (data) => api.post('/nudges', data),
   getMyNudges: () => api.get('/nudges'),
+  getSentToUserIds: () => api.get('/nudges/sent'),
   markRead: (nudgeId) => api.post(`/nudges/${nudgeId}/read`)
 };
 

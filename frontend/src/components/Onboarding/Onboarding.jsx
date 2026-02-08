@@ -4,7 +4,7 @@ import { useGame } from '../../context/GameContext';
 import toast from 'react-hot-toast';
 
 const steps = [
-  { id: 'welcome', title: 'Welcome to SavePop', subtitle: 'Financial freedom, but make it fun.', icon: '✨' },
+  { id: 'welcome', title: 'Welcome to XPense', subtitle: 'Financial freedom, but make it fun.', icon: '✨' },
   { id: 'goal', title: 'What are we manifesting?', subtitle: 'Define your main financial objective.', icon: '🎯' },
 ];
 

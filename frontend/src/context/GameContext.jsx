@@ -49,6 +49,12 @@ export function GameProvider({ children }) {
     } catch (_) {}
   };
 
+  const mergeStats = (partial) => {
+    if (partial && typeof partial === 'object') {
+      setStats((prev) => ({ ...prev, ...partial }));
+    }
+  };
+
   const fetchGoals = async () => {
     try {
       const { data } = await goalService.getAll();
@@ -133,6 +139,7 @@ export function GameProvider({ children }) {
     fetchGoals,
     fetchQuests,
     fetchAll,
+    mergeStats,
     createGoal,
     contribute,
     acceptQuest,
