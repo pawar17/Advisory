@@ -16,8 +16,8 @@ import AddVetoRequest from './components/Social/AddVetoRequest';
 import AIChat from './components/Chat/AIChat';
 import GameWorld from './components/World/GameWorld';
 import Confetti from './components/Feedback/Confetti';
-import { MOCK_FEED, MOCK_FRIENDS } from './constants';
-import { vetoService } from './services/api';
+import { MOCK_FEED } from './constants';
+import { vetoService, friendsService, nudgeService, questService } from './services/api';
 import toast from 'react-hot-toast';
 
 const pageVariants = {
@@ -50,6 +50,10 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [feed] = useState(MOCK_FEED);
   const [vetoRequests, setVetoRequests] = useState([]);
+  const [friends, setFriends] = useState([]);
+  const [nudgesReceived, setNudgesReceived] = useState([]);
+  const [dismissedNudgeId, setDismissedNudgeId] = useState(null);
+  const [generatedQuests, setGeneratedQuests] = useState([]);
 
   const fullUser = useMemo(() => {
     if (!authUser) return null;
@@ -80,12 +84,41 @@ export default function App() {
     }
   };
 
+  const fetchFriends = async () => {
+    try {
+      const { data } = await friendsService.getList();
+      setFriends(data.friends || []);
+    } catch (_) {
+      setFriends([]);
+    }
+  };
+
+  const fetchNudges = async () => {
+    try {
+      const { data } = await nudgeService.getMyNudges();
+      setNudgesReceived(data.nudges || []);
+    } catch (_) {
+      setNudgesReceived([]);
+    }
+  };
+
   useEffect(() => {
     if (authUser) {
       fetchAll();
       fetchVetoRequests();
+      fetchNudges();
     }
   }, [authUser]);
+
+  useEffect(() => {
+    if (showFriendPicker) fetchFriends();
+  }, [showFriendPicker]);
+
+  useEffect(() => {
+    if (activeTab === 'quests') {
+      questService.getGenerated().then(({ data }) => setGeneratedQuests(data.quests || [])).catch(() => setGeneratedQuests([]));
+    }
+  }, [activeTab]);
 
   const triggerConfetti = () => {
     setShowConfetti(true);
@@ -129,10 +162,27 @@ export default function App() {
     triggerConfetti();
   };
 
-  const handleNudge = (username) => {
-    setNudgeNotification(username);
-    setTimeout(() => setNudgeNotification(null), 3000);
-    setShowFriendPicker(false);
+  const handleNudge = async (friend) => {
+    try {
+      await nudgeService.send({
+        toUserId: friend.id,
+        goalId: appGoal?.id ?? goals?.[0]?._id,
+        goalName: appGoal?.name ?? goals?.[0]?.goal_name ?? 'your goal',
+      });
+      setNudgeNotification(friend.name || friend.username);
+      setTimeout(() => setNudgeNotification(null), 3000);
+      setShowFriendPicker(false);
+      toast.success(`Sent nudge to ${friend.name || friend.username}!`);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not send nudge');
+    }
+  };
+
+  const handleDismissNudge = async (nudgeId) => {
+    setDismissedNudgeId(nudgeId);
+    try {
+      await nudgeService.markRead(nudgeId);
+    } catch (_) {}
   };
 
   const handleAddVetoRequest = async ({ item, amount, reason }) => {
@@ -203,8 +253,38 @@ export default function App() {
             className="fixed top-16 left-0 right-0 z-[100] px-4"
           >
             <div className="editorial-card bg-brand-black text-white p-4 text-center">
-              <p className="font-heading text-xs uppercase">Nudge sent to @{nudgeNotification}! ✨</p>
+              <p className="font-heading text-xs uppercase">Sent nudge to {nudgeNotification}! ✨</p>
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {nudgesReceived.find((n) => !n.readAt && n.id !== dismissedNudgeId) && (
+          <motion.div
+            initial={{ y: -80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -80, opacity: 0 }}
+            className="fixed top-16 left-0 right-0 z-[90] px-4"
+          >
+            {(() => {
+              const nudge = nudgesReceived.find((n) => !n.readAt && n.id !== dismissedNudgeId);
+              if (!nudge) return null;
+              return (
+                <div className="editorial-card bg-brand-pink/90 text-brand-black p-4 flex items-center justify-between gap-2">
+                  <p className="font-heading text-xs uppercase flex-1">
+                    <strong>{nudge.fromName}</strong> nudged you to keep pushing for your goals! ✨
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleDismissNudge(nudge.id)}
+                    className="text-[10px] font-mono uppercase font-bold"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              );
+            })()}
           </motion.div>
         )}
       </AnimatePresence>
@@ -234,18 +314,28 @@ export default function App() {
               onClick={(e) => e.stopPropagation()}
             >
               <h3 className="font-heading text-xl uppercase text-center">Nudge a Friend</h3>
+              <p className="text-[10px] text-center text-gray-500">Pick a friend to nudge them to keep pushing for their goals.</p>
               <div className="space-y-2 max-h-60 overflow-y-auto">
-                {MOCK_FRIENDS.map((friend) => (
-                  <button
-                    key={friend.id}
-                    type="button"
-                    onClick={() => handleNudge(friend.username)}
-                    className="w-full flex items-center gap-3 p-3 border-2 border-brand-black/10 rounded-2xl hover:bg-brand-yellow"
-                  >
-                    <span className="text-2xl">{friend.avatar}</span>
-                    <p className="font-bold text-sm">@{friend.username}</p>
-                  </button>
-                ))}
+                {friends.length === 0 ? (
+                  <p className="text-xs text-gray-500 text-center py-4">Add friends from Profile to nudge them.</p>
+                ) : (
+                  friends.map((friend) => (
+                    <button
+                      key={friend.id}
+                      type="button"
+                      onClick={() => handleNudge(friend)}
+                      className="w-full flex items-center gap-3 p-3 border-2 border-brand-black/10 rounded-2xl hover:bg-brand-yellow"
+                    >
+                      <span className="w-10 h-10 bg-brand-lavender rounded-full flex items-center justify-center font-bold text-sm">
+                        {(friend.name || friend.username || '?')[0].toUpperCase()}
+                      </span>
+                      <div className="text-left">
+                        <p className="font-bold text-sm">{friend.name || friend.username}</p>
+                        <p className="text-[10px] text-gray-500">@{friend.username}</p>
+                      </div>
+                    </button>
+                  ))
+                )}
               </div>
               <button type="button" onClick={() => setShowFriendPicker(false)} className="w-full editorial-button py-3 text-xs uppercase">
                 Close
@@ -284,6 +374,18 @@ export default function App() {
                   </button>
                 </div>
                 <div className="space-y-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowFriendPicker(true)}
+                    className="w-full editorial-card p-4 flex items-center gap-4 border-2 border-brand-yellow bg-brand-yellow/30"
+                  >
+                    <span className="text-3xl">👋</span>
+                    <div className="text-left flex-1">
+                      <p className="font-bold text-sm uppercase">Nudge a friend</p>
+                      <p className="text-[10px] text-gray-600">Send a friend a nudge to keep pushing for their goals</p>
+                    </div>
+                    <span className="text-brand-black">→</span>
+                  </button>
                   {activeQuests.map((quest) => (
                     <QuestCard key={quest.id} quest={quest} onComplete={handleCompleteQuest} />
                   ))}
@@ -293,7 +395,7 @@ export default function App() {
                       onClick={() => handleTabChange('quests')}
                       className="w-full editorial-card p-6 border-dashed border-2 border-brand-black/20 opacity-60 text-center bg-white"
                     >
-                      <p className="font-mono text-[10px] uppercase font-bold text-gray-400">No active quests. Choose a mission!</p>
+                      <p className="font-mono text-[10px] uppercase font-bold text-gray-400">No other active quests. Choose a mission!</p>
                     </button>
                   )}
                 </div>
@@ -330,6 +432,21 @@ export default function App() {
                   </div>
                 )}
               </section>
+              {generatedQuests.length > 0 && (
+                <section className="space-y-4">
+                  <h3 className="font-heading text-sm uppercase tracking-widest border-b-2 border-brand-black pb-1">Suggested for you (from your spending)</h3>
+                  <p className="text-[10px] text-gray-500">Personalized quest ideas based on your uploaded bank statements. Upload statements in Profile → Bank Statements to improve suggestions.</p>
+                  <div className="space-y-3">
+                    {generatedQuests.map((q, i) => (
+                      <div key={i} className="editorial-card p-4">
+                        <p className="font-bold text-sm">{q.name}</p>
+                        <p className="text-xs text-gray-600">{q.description}</p>
+                        <p className="text-[10px] text-gray-500 mt-1">+{q.points_reward ?? 0} XP · +{q.currency_reward ?? 0} coins</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
               <section className="space-y-4">
                 <h3 className="font-heading text-sm uppercase tracking-widest border-b-2 border-brand-black pb-1">Available Missions</h3>
                 <div className="space-y-6">

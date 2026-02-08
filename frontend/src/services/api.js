@@ -56,6 +56,8 @@ export const userService = {
 export const goalService = {
   create: (data) => api.post('/goals', data),
   getAll: () => api.get('/goals'),
+  update: (goalId, data) => api.patch(`/goals/${goalId}`, data),
+  reorder: (goalIds) => api.post('/goals/reorder', { goalIds }),
   contribute: (goalId, amount) => api.post(`/goals/${goalId}/contribute`, { amount })
 };
 
@@ -66,6 +68,7 @@ export const goalService = {
 export const questService = {
   getAvailable: () => api.get('/quests/available'),
   getActive: () => api.get('/quests/active'),
+  getGenerated: () => api.get('/quests/generated'),
   accept: (questId) => api.post(`/quests/${questId}/accept`),
   complete: (userQuestId) => api.post(`/quests/${userQuestId}/complete`)
 };
@@ -94,6 +97,32 @@ export const vetoService = {
   getAll: () => api.get('/veto-requests'),
   create: (data) => api.post('/veto-requests', data),
   vote: (requestId, vote) => api.post(`/veto-requests/${requestId}/vote`, { vote }),
+};
+
+// ============================================================================
+// BANK STATEMENTS
+// ============================================================================
+
+export const bankStatementService = {
+  list: () => api.get('/bank-statements'),
+  upload: (formData) => api.post('/bank-statements/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  spendingAnalysis: () => api.get('/bank-statements/spending-analysis'),
+  delete: (statementId) => api.delete(`/bank-statements/${statementId}`)
+};
+
+// ============================================================================
+// FRIENDS & NUDGES
+// ============================================================================
+
+export const friendsService = {
+  getList: () => api.get('/friends'),
+  add: (username) => api.post('/friends', { username })
+};
+
+export const nudgeService = {
+  send: (data) => api.post('/nudges', data),
+  getMyNudges: () => api.get('/nudges'),
+  markRead: (nudgeId) => api.post(`/nudges/${nudgeId}/read`)
 };
 
 // ============================================================================

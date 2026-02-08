@@ -19,10 +19,24 @@ from utils.nessie import (
     get_all_customers
 )
 from utils.ai_calculator import calculate_levels_with_ai, ai_chat_assistant
+from utils.statement_parser import (
+    parse_and_extract_transactions,
+    categorize_transactions_with_ai,
+    analyze_spending_and_suggest_daily,
+    generate_quests_from_spending,
+)
+from models.bank_statement import BankStatement
+from models.nudge import Nudge
+from werkzeug.utils import secure_filename
+import uuid
 
 # Initialize Flask app
 app = Flask(__name__)
 CORS(app)
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
+UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "uploads")
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
 # Connect to database
 db = db_instance.connect()
@@ -33,6 +47,8 @@ goal_model = Goal(db)
 quest_model = SideQuest(db)
 daily_flow_model = DailyFlow(db)
 veto_request_model = VetoRequestModel(db)
+bank_statement_model = BankStatement(db)
+nudge_model = Nudge(db)
 
 # ============================================================================
 # AUTHENTICATION ROUTES
@@ -283,17 +299,10 @@ def create_goal():
 @app.route('/api/goals', methods=['GET'])
 @jwt_required
 def get_goals():
-    """Get all user goals"""
+    """Get all user goals with daily commitment and levels 1-50."""
     try:
         goals = goal_model.get_user_goals(request.user_id)
-
-        # Format response
-        for goal in goals:
-            goal['_id'] = str(goal['_id'])
-            goal['user_id'] = str(goal['user_id'])
-
-        return jsonify({"goals": goals}), 200
-
+        return jsonify({"goals": [_format_goal(g) for g in goals]}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -619,6 +628,344 @@ def ai_chat():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# ============================================================================
+# BANK STATEMENTS (upload PDF, parse, categorize, spending analysis)
+# ============================================================================
+
+@app.route('/api/bank-statements/upload', methods=['POST'])
+@jwt_required
+def upload_bank_statement():
+    """Upload a bank statement PDF; parse and store transactions."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file part"}), 400
+        file = request.files['file']
+        if not file or file.filename == '':
+            return jsonify({"error": "No selected file"}), 400
+        if not file.filename.lower().endswith('.pdf'):
+            return jsonify({"error": "Only PDF files are allowed"}), 400
+
+        filename = secure_filename(file.filename) or "statement.pdf"
+        unique = str(uuid.uuid4())[:8]
+        save_name = f"{request.user_id}_{unique}_{filename}"
+        path = os.path.join(app.config['UPLOAD_FOLDER'], save_name)
+        file.save(path)
+
+        transactions = parse_and_extract_transactions(path)
+        transactions = categorize_transactions_with_ai(transactions)
+
+        statement_id = bank_statement_model.create(
+            request.user_id,
+            filename=filename,
+            file_size_bytes=os.path.getsize(path),
+        )
+        bank_statement_model.insert_transactions(
+            request.user_id,
+            statement_id,
+            [{"date": t.get("date"), "description": t.get("description", ""), "amount": t.get("amount", 0), "category": t.get("category", "other")} for t in transactions]
+        )
+
+        return jsonify({
+            "message": "Statement uploaded and processed",
+            "statementId": str(statement_id),
+            "transactionCount": len(transactions),
+        }), 201
+    except ImportError as e:
+        return jsonify({"error": "PDF parsing not available. Install pdfplumber."}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/bank-statements', methods=['GET'])
+@jwt_required
+def list_bank_statements():
+    """List user's uploaded statements."""
+    try:
+        docs = bank_statement_model.get_user_statements(request.user_id)
+        out = []
+        for d in docs:
+            d['_id'] = str(d['_id'])
+            d['user_id'] = str(d.get('user_id', ''))
+            out.append(d)
+        from bson import ObjectId
+        uid = ObjectId(request.user_id) if isinstance(request.user_id, str) else request.user_id
+        total_txs = bank_statement_model.transactions.count_documents({"user_id": uid})
+        return jsonify({"statements": out, "totalTransactions": total_txs}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/bank-statements/<statement_id>', methods=['DELETE'])
+@jwt_required
+def delete_bank_statement(statement_id):
+    """Delete a statement and all its transactions."""
+    try:
+        doc = bank_statement_model.get_by_id(statement_id)
+        if not doc or str(doc.get("user_id")) != request.user_id:
+            return jsonify({"error": "Statement not found"}), 404
+        deleted = bank_statement_model.delete_statement(statement_id, request.user_id)
+        return jsonify({"message": "Statement deleted", "transactionsRemoved": deleted}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/bank-statements/spending-analysis', methods=['GET'])
+@jwt_required
+def spending_analysis():
+    """Get spending by category and suggested daily savings (uses active goal)."""
+    try:
+        goals = goal_model.get_user_goals(request.user_id, status="active")
+        goal = goals[0] if goals else None
+        target_amount = goal.get("target_amount", 0) if goal else 0
+        current_amount = goal.get("current_amount", 0) if goal else 0
+        target_date = goal.get("target_date") if goal else None
+        goal_name = goal.get("goal_name", "") if goal else ""
+
+        transactions = bank_statement_model.get_user_transactions(request.user_id, limit=500)
+        transaction_count = len(transactions)
+        by_cat = {}
+        for t in transactions:
+            amt = t.get("amount", 0)
+            if amt is not None and float(amt) < 0:
+                c = t.get("category", "other")
+                by_cat[c] = by_cat.get(c, 0) + abs(float(amt))
+
+        suggestion = analyze_spending_and_suggest_daily(
+            transactions, target_amount, target_date, current_amount
+        )
+        return jsonify({
+            "spendingByCategory": by_cat,
+            "suggestion": suggestion,
+            "goalName": goal_name,
+            "transactionCount": transaction_count,
+            "hasStatementData": transaction_count > 0,
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ============================================================================
+# GOALS: PATCH (edit), REORDER (queue)
+# ============================================================================
+
+@app.route('/api/goals/<goal_id>', methods=['PATCH'])
+@jwt_required
+def update_goal(goal_id):
+    """Update a goal (name, category, target_amount, target_date, status)."""
+    try:
+        goal = goal_model.get_goal_by_id(goal_id)
+        if not goal:
+            return jsonify({"error": "Goal not found"}), 404
+        if str(goal['user_id']) != request.user_id:
+            return jsonify({"error": "Unauthorized"}), 403
+
+        data = request.json or {}
+        allowed = ("goal_name", "goal_category", "target_amount", "target_date", "status")
+        update = {k: data[k] for k in allowed if k in data}
+        if not update:
+            return jsonify({"message": "Nothing to update", "goal": _format_goal(goal)}), 200
+
+        goal_model.update_goal(goal_id, update)
+        updated = goal_model.get_goal_by_id(goal_id)
+        return jsonify({"message": "Goal updated", "goal": _format_goal(updated)}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/goals/reorder', methods=['POST'])
+@jwt_required
+def reorder_goals():
+    """Set queue order. Body: { "goalIds": ["id1", "id2", ...] } (order = index)."""
+    try:
+        data = request.json or {}
+        goal_ids = data.get("goalIds") or []
+        for i, gid in enumerate(goal_ids):
+            goal = goal_model.get_goal_by_id(gid)
+            if goal and str(goal["user_id"]) == request.user_id:
+                goal_model.update_goal(gid, {"order": i})
+        goals = goal_model.get_user_goals(request.user_id)
+        return jsonify({"goals": [_format_goal(g) for g in goals]}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def _goal_daily_commitment_and_levels(goal):
+    """Compute daily commitment and levels 1-50 (amount per level) for a goal."""
+    from datetime import datetime
+    target = float(goal.get("target_amount", 0) or 0)
+    current = float(goal.get("current_amount", 0) or 0)
+    remaining = max(0, target - current)
+    days = 180
+    target_date = goal.get("target_date")
+    if target_date:
+        try:
+            if isinstance(target_date, str):
+                target_date = datetime.fromisoformat(target_date.replace("Z", "+00:00"))
+            days = max(30, (target_date - datetime.utcnow()).days)
+        except Exception:
+            pass
+    daily_commitment = round(remaining / days, 2) if days else 0
+    suggested_levels = min(50, max(1, 50))
+    amount_per_level = round(remaining / 50, 2) if remaining else 0
+    return {"daily_commitment": daily_commitment, "suggested_levels": 50, "amount_per_level": amount_per_level, "days_to_goal": days}
+
+
+def _format_goal(g):
+    if not g:
+        return None
+    extra = _goal_daily_commitment_and_levels(g)
+    return {
+        "_id": str(g["_id"]),
+        "user_id": str(g.get("user_id", "")),
+        "goal_name": g.get("goal_name", ""),
+        "goal_category": g.get("goal_category", "other"),
+        "target_amount": g.get("target_amount", 0),
+        "current_amount": g.get("current_amount", 0),
+        "target_date": g.get("target_date"),
+        "total_levels": g.get("total_levels", 10),
+        "current_level": g.get("current_level", 0),
+        "daily_target": g.get("daily_target", 0),
+        "status": g.get("status", "active"),
+        "order": g.get("order", 0),
+        "daily_commitment": extra["daily_commitment"],
+        "suggested_levels": extra["suggested_levels"],
+        "amount_per_level": extra["amount_per_level"],
+        "days_to_goal": extra["days_to_goal"],
+    }
+
+
+# ============================================================================
+# QUESTS: generated from spending (Gemini)
+# ============================================================================
+
+@app.route('/api/quests/generated', methods=['GET'])
+@jwt_required
+def get_generated_quests():
+    """Get personalized quest suggestions based on user's spending habits."""
+    try:
+        by_cat = bank_statement_model.get_spending_by_category(request.user_id, days=90)
+        # Pass positive amounts (expense totals) so Gemini can suggest quests to cut spending
+        spending = {d["_id"]: abs(d["total"]) for d in by_cat}
+        goals = goal_model.get_user_goals(request.user_id, status="active")
+        goal_name = goals[0].get("goal_name", "") if goals else ""
+        quests = generate_quests_from_spending(spending, goal_name)
+        return jsonify({"quests": quests}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ============================================================================
+# FRIENDS & NUDGES
+# ============================================================================
+
+@app.route('/api/friends', methods=['GET'])
+@jwt_required
+def get_friends():
+    """Get current user's friend list with names/usernames."""
+    try:
+        user = user_model.find_by_id(request.user_id)
+        friend_ids = user.get("friends") or []
+        friends = []
+        for fid in friend_ids:
+            u = user_model.find_by_id(fid)
+            if u:
+                friends.append({
+                    "id": str(u["_id"]),
+                    "username": u.get("username", ""),
+                    "name": u.get("name", ""),
+                })
+        return jsonify({"friends": friends}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/friends', methods=['POST'])
+@jwt_required
+def add_friend():
+    """Add a friend by username. Body: { "username": "friend_username" }."""
+    try:
+        data = request.json or {}
+        username = (data.get("username") or "").strip()
+        if not username:
+            return jsonify({"error": "username is required"}), 400
+        friend = user_model.find_by_username(username)
+        if not friend:
+            return jsonify({"error": "User not found"}), 404
+        friend_id = friend["_id"]
+        if str(friend_id) == request.user_id:
+            return jsonify({"error": "You cannot add yourself"}), 400
+        user_model.add_friend(request.user_id, friend_id)
+        return jsonify({
+            "message": f"Added {friend.get('name') or friend.get('username')} as friend",
+            "friend": {"id": str(friend_id), "username": friend.get("username", ""), "name": friend.get("name", "")},
+        }), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/nudges', methods=['POST'])
+@jwt_required
+def send_nudge():
+    """Send a nudge to a friend. Body: { "toUserId": "...", "goalId": "...", "goalName": "..." }."""
+    try:
+        data = request.json or {}
+        to_user_id = data.get("toUserId")
+        goal_id = data.get("goalId")
+        goal_name = (data.get("goalName") or "").strip() or "your goal"
+
+        if not to_user_id:
+            return jsonify({"error": "toUserId is required"}), 400
+
+        user = user_model.find_by_id(request.user_id)
+        friend_ids = user.get("friends") or []
+        from bson import ObjectId
+        to_oid = ObjectId(to_user_id)
+        if to_oid not in friend_ids and str(to_oid) not in [str(x) for x in friend_ids]:
+            return jsonify({"error": "User is not in your friend list"}), 400
+
+        nudge_id = nudge_model.create(request.user_id, to_user_id, goal_id, goal_name)
+        to_user = user_model.find_by_id(to_user_id)
+        return jsonify({
+            "message": f"Sent nudge to {to_user.get('name') or to_user.get('username') or 'friend'}!",
+            "nudgeId": str(nudge_id),
+        }), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/nudges', methods=['GET'])
+@jwt_required
+def get_my_nudges():
+    """Get nudges sent to the current user (for notification: 'X nudged you to keep pushing for your goals!')."""
+    try:
+        docs = nudge_model.get_for_user(request.user_id, limit=30)
+        nudges = []
+        for d in docs:
+            from_user = user_model.find_by_id(d["from_user_id"])
+            nudges.append({
+                "id": str(d["_id"]),
+                "fromUserId": str(d["from_user_id"]),
+                "fromName": (from_user.get("name") or from_user.get("username") or "Someone") if from_user else "Someone",
+                "goalName": d.get("goal_name", "your goals"),
+                "readAt": d.get("read_at"),
+                "createdAt": d.get("created_at"),
+            })
+        return jsonify({"nudges": nudges}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/nudges/<nudge_id>/read', methods=['POST'])
+@jwt_required
+def mark_nudge_read(nudge_id):
+    """Mark a nudge as read."""
+    try:
+        nudge_model.mark_read(nudge_id, request.user_id)
+        return jsonify({"message": "Marked as read"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 # ============================================================================
 # HEALTH CHECK

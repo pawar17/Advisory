@@ -16,6 +16,10 @@ class Goal:
         if isinstance(user_id, str):
             user_id = ObjectId(user_id)
 
+        # New goals go at end of queue
+        last = self.collection.find_one({"user_id": user_id}, sort=[("order", -1)], projection={"order": 1})
+        next_order = (last["order"] + 1) if last and "order" in last else 0
+
         goal = {
             "user_id": user_id,
             "goal_name": goal_name,
@@ -23,11 +27,12 @@ class Goal:
             "target_amount": target_amount,
             "current_amount": 0,
             "target_date": target_date,
-            "total_levels": 10,  # Default, will be updated by AI
+            "total_levels": 10,
             "current_level": 0,
             "daily_target": 0,
             "level_thresholds": [],
-            "status": "active",  # active, completed, paused
+            "status": "active",  # active, completed, paused, queued
+            "order": next_order,  # queue order: lower = higher priority
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow(),
             "completed_at": None
@@ -44,7 +49,7 @@ class Goal:
         if status:
             query["status"] = status
 
-        return list(self.collection.find(query).sort("created_at", -1))
+        return list(self.collection.find(query).sort([("order", 1), ("created_at", -1)]))
 
     def get_goal_by_id(self, goal_id):
         """Get a specific goal"""
