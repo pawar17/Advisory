@@ -48,11 +48,11 @@ try:
     
     # Ping to verify connection
     client.admin.command('ping')
-    print("✓ Successfully connected to MongoDB Atlas")
+    print("Successfully connected to MongoDB Atlas")
     
     # Access database
     db = client["samplebudgeting"]
-    print(f"✓ Using database: samplebudgeting")
+    print(f"Using database: samplebudgeting")
     
     collection_name = "daily_flow"
     
@@ -80,7 +80,7 @@ try:
     while True:
         print("\n" + "="*50)
         user_data = {}
-        user_data["user_id"] = userid["_id"]  # Link to the user_id
+        user_data["user_id"] = userid["_id"]  # Link to the user_id established from creation of username
         user_data["username"] = username_input  # Store username for easier reference
 
         abort = False
@@ -90,12 +90,12 @@ try:
                 while True:
                     date_str = input("Enter date (e.g. 2026-02-07 or 02/07/2026 or Feb 7 2026): ").strip()
                     if not date_str:
-                        print("✗ date cannot be empty")
+                        print("Date cannot be empty")
                         abort = True
                         break
                     parsed = parse_date(date_str)
                     if parsed is None:
-                        print("✗ Invalid date format. Try YYYY-MM-DD, MM/DD/YYYY, DD/MM/YYYY, or 'Feb 7 2026'.")
+                        print("Invalid date format. Try YYYY-MM-DD, MM/DD/YYYY, DD/MM/YYYY, or 'Feb 7 2026'.")
                         continue
                     user_data[field] = parsed
                     break
@@ -124,7 +124,7 @@ try:
 
         # All fields filled successfully
         data.append(user_data)
-        print(f"✓ Entry added (linked to user_id: {user_data['user_id']})")
+        print(f"Entry added (linked to user_id: {user_data['user_id']})")
 
         add_more = input("\nAdd another entry? (y/n): ").strip().lower()
         if add_more != 'y':
@@ -132,30 +132,30 @@ try:
     
     # Validate all documents have required fields
     if data:
-        print(f"\n✓ Validating {len(data)} document(s)...")
+        print(f"\nValidating {len(data)} document(s)...")
         for i, doc in enumerate(data):
             missing_fields = [f for f in required_fields if f not in doc]
             if missing_fields:
-                print(f"✗ Document {i+1} missing fields: {', '.join(missing_fields)}")
+                print(f"Document {i+1} missing fields: {', '.join(missing_fields)}")
                 exit()
-        print("✓ All documents valid")
+        print("All documents valid")
     
     # Insert data
     if data and len(data) > 0:
         result = collection.insert_many(data)
-        print(f"\n✓ Successfully inserted {len(result.inserted_ids)} document(s)")
-        print(f"✓ Inserted IDs: {result.inserted_ids}")
+        print(f"\nSuccessfully inserted {len(result.inserted_ids)} document(s)")
+        print(f"Inserted IDs: {result.inserted_ids}")
     else:
-        print("✗ No valid data to insert")
-        print("✗ Data must be JSON objects")
+        print("No valid data to insert")
+        print("Data must be JSON objects")
         
 except ServerSelectionTimeoutError:
-    print("✗ TIMEOUT: Could not connect to MongoDB")
+    print("TIMEOUT: Could not connect to MongoDB")
     print("  - Check your internet connection")
     print("  - Check your IP whitelist in MongoDB Atlas")
 except ConnectionFailure as e:
-    print(f"✗ CONNECTION FAILED: {e}")
+    print(f"CONNECTION FAILED: {e}")
 except Exception as e:
-    print(f"✗ ERROR: {e}")
+    print(f"ERROR: {e}")
     import traceback
     traceback.print_exc()
