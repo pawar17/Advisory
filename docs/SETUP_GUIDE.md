@@ -126,7 +126,7 @@ Frontend will run on `http://localhost:5173`
 ## Project Structure
 
 ```
-Advisory/
+XPense/
 ├── backend/
 │   ├── app.py                 # Main Flask application
 │   ├── config/

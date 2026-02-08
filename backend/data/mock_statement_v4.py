@@ -2,6 +2,7 @@
 Hardcoded v4 statement data: transactions, categories, totals, and patterns.
 Use this for spending analysis, charts, goal suggestion, and quests so values are correct.
 """
+from datetime import datetime
 
 # 1. Statement metadata
 STATEMENT_METADATA = {
@@ -111,6 +112,85 @@ NEEDS_VS_WANTS = {
 
 # Transaction count for "based on N transactions"
 MOCK_TRANSACTION_COUNT = len(DEBITS)
+
+# Map category name to DB-friendly slug (for stored transactions)
+CATEGORY_TO_SLUG = {
+    "Tuition & Education": "bills",
+    "Housing": "bills",
+    "Food & Dining": "food",
+    "Coffee & Snacks": "food",
+    "Transportation": "transport",
+    "Shopping": "shopping",
+    "Health": "health",
+    "Subscriptions": "subscriptions",
+    "Peer-to-Peer": "transfer",
+}
+
+
+def _merchant_to_category(merchant):
+    """Return category slug for a merchant from CATEGORY_MAPPING."""
+    for cat_name, merchants in CATEGORY_MAPPING.items():
+        for m in merchants:
+            if m.lower() in (merchant or "").lower() or (merchant or "").lower() in m.lower():
+                return CATEGORY_TO_SLUG.get(cat_name, "other")
+    return "other"
+
+
+def get_mock_transactions_for_upload():
+    """
+    Return list of transactions in upload format: [{"date", "description", "amount", "category"}].
+    Used when PDF parsing is unavailable so upload still succeeds and daily amount/levels use this data.
+    Credits = positive amount, debits = negative. Date is datetime (March 2026 from statement period).
+    """
+    year, month = 2026, 3
+    out = []
+    for c in CREDITS:
+        d = c.get("date", "")
+        try:
+            if "/" in d:
+                parts = d.split("/")
+                # MM/DD format
+                mo, dy = int(parts[0]), int(parts[1])
+                out.append({
+                    "date": datetime(year, mo, dy),
+                    "description": c.get("description", "Deposit"),
+                    "amount": float(c.get("amount", 0)),
+                    "category": "transfer",
+                })
+            else:
+                out.append({
+                    "date": datetime(year, month, 1),
+                    "description": c.get("description", "Deposit"),
+                    "amount": float(c.get("amount", 0)),
+                    "category": "transfer",
+                })
+        except (ValueError, IndexError):
+            out.append({
+                "date": datetime(year, month, 1),
+                "description": c.get("description", "Deposit"),
+                "amount": float(c.get("amount", 0)),
+                "category": "transfer",
+            })
+    for d in DEBITS:
+        date_str = d.get("date", "")
+        merchant = d.get("merchant", "Unknown")
+        amount = -abs(float(d.get("amount", 0)))
+        try:
+            if "/" in date_str:
+                parts = date_str.split("/")
+                mo, dy = int(parts[0]), int(parts[1])
+                dt = datetime(year, mo, dy)
+            else:
+                dt = datetime(year, month, 1)
+        except (ValueError, IndexError):
+            dt = datetime(year, month, 1)
+        out.append({
+            "date": dt,
+            "description": merchant,
+            "amount": amount,
+            "category": _merchant_to_category(merchant),
+        })
+    return out
 
 
 def get_mock_spending_analysis():

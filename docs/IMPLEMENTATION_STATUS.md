@@ -134,7 +134,7 @@
 ## File Structure Summary
 
 ```
-Advisory/
+XPense/
 ├── backend/                    # Python Flask Backend
 │   ├── app.py                 # ⭐ Main application (all endpoints)
 │   ├── config/

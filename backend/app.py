@@ -27,6 +27,7 @@ from data.mock_statement_v4 import (
     get_mock_spending_analysis,
     get_mock_suggestion,
     get_mock_quests_from_spending,
+    get_mock_transactions_for_upload,
 )
 from models.bank_statement import BankStatement
 from models.nudge import Nudge
@@ -909,8 +910,16 @@ def upload_bank_statement():
         path = os.path.join(app.config['UPLOAD_FOLDER'], save_name)
         file.save(path)
 
-        transactions = parse_and_extract_transactions(path)
-        transactions = categorize_transactions_with_ai(transactions)
+        use_mock = False
+        try:
+            transactions = parse_and_extract_transactions(path)
+            transactions = categorize_transactions_with_ai(transactions)
+        except ImportError:
+            use_mock = True
+            transactions = get_mock_transactions_for_upload()
+        except Exception:
+            use_mock = True
+            transactions = get_mock_transactions_for_upload()
 
         statement_id = bank_statement_model.create(
             request.user_id,
@@ -923,13 +932,48 @@ def upload_bank_statement():
             [{"date": t.get("date"), "description": t.get("description", ""), "amount": t.get("amount", 0), "category": t.get("category", "other")} for t in transactions]
         )
 
+        # Recalculate daily amount and levels for active goals using new transaction data
+        try:
+            txns = bank_statement_model.get_user_transactions(request.user_id, limit=500)
+            monthly_income = 3000
+            avg_expenses = 2200
+            if txns:
+                income = sum(float(t.get("amount") or 0) for t in txns if float(t.get("amount") or 0) > 0)
+                expenses = sum(abs(float(t.get("amount") or 0)) for t in txns if float(t.get("amount") or 0) < 0)
+                if income > 0 or expenses > 0:
+                    monthly_income = max(1, round(income, 2)) if income > 0 else 3000
+                    avg_expenses = round(expenses, 2) if expenses > 0 else 2200
+            user = user_model.find_by_id(request.user_id)
+            active_goals = goal_model.get_user_goals(request.user_id, status="active")
+            for goal in active_goals:
+                ai_result = calculate_levels_with_ai(
+                    {
+                        "target_amount": goal["target_amount"],
+                        "current_amount": goal.get("current_amount", 0),
+                        "category": goal.get("goal_category", "other"),
+                        "target_date": goal.get("target_date"),
+                    },
+                    {
+                        "monthly_income": monthly_income,
+                        "avg_expenses": avg_expenses,
+                        "current_streak": user.get("current_streak", 0),
+                        "from_bank_statement": True,
+                    },
+                )
+                goal_model.set_level_system(
+                    goal["_id"],
+                    ai_result["total_levels"],
+                    ai_result["level_thresholds"],
+                    ai_result["daily_target"],
+                )
+        except Exception:
+            pass
+
         return jsonify({
-            "message": "Statement uploaded and processed",
+            "message": "Statement uploaded and processed" + (" (using sample data)" if use_mock else ""),
             "statementId": str(statement_id),
             "transactionCount": len(transactions),
         }), 201
-    except ImportError as e:
-        return jsonify({"error": "PDF parsing not available. Install pdfplumber."}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

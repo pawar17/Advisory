@@ -1,92 +1,127 @@
-# GAMIFIED SAVINGS APP - HACKATHON PROJECT
+# XPense — Gamified Savings App
 
-## Project Overview
-A gamified personal finance application that transforms savings goals into an engaging, social experience through AI-powered level progression, social accountability, and game mechanics.
-
-## Team
-- **Anna**: Backend Development (Python/Flask, MongoDB, APIs)
-- **Aadya**: Frontend Development (React, UI/UX, Components)
-- **Suhani**: Integration & Features (API client, State management, Special features)
+A gamified personal finance app: set goals, level up as you save, get AI-driven daily amounts and levels, and use social features (feed, nudges, veto requests).
 
 ## Tech Stack
-- **Frontend**: React.js (Vite), Tailwind CSS, shadcn/ui, Framer Motion, Recharts
-- **Backend**: Python (Flask), PyMongo
-- **Database**: MongoDB Atlas
-- **AI**: Google AI Studio API (Gemini models)
 
-## Project Structure
-```
-Advisory/
-├── backend/              # Python Flask backend
-│   ├── models/          # Database models
-│   ├── routes/          # API endpoints
-│   ├── utils/           # Helper functions (Nessie, AI)
-│   ├── config/          # Configuration files
-│   ├── app.py           # Main Flask application
-│   └── requirements.txt # Python dependencies
-├── frontend/            # React frontend
-│   ├── src/
-│   │   ├── components/  # React components
-│   │   ├── pages/       # Page components
-│   │   ├── services/    # API client
-│   │   ├── context/     # State management
-│   │   └── utils/       # Helper functions
-│   ├── package.json
-│   └── vite.config.js
-├── docs/                # Documentation
-├── scripts/             # Utility scripts (seeding, etc.)
-└── README.md
-```
+| Layer    | Stack |
+|----------|--------|
+| Frontend | React (Vite), Tailwind CSS, Framer Motion |
+| Backend  | Python, Flask, PyMongo |
+| Database | MongoDB Atlas |
+| AI       | Google AI (Gemini) for goals and chat |
 
-## Core Features (MVP)
-- [x] User authentication with JWT
-- [ ] Bank account connection (Nessie API)
-- [ ] AI-calculated flexible level system
-- [ ] Gamification: Points, currency, streaks
-- [ ] Side quests system
-- [ ] Social features: Friends, veto cards, leaderboard
-- [ ] AI assistant chatbot
-- [ ] Dashboard with progress tracking
+## How to Run
 
-## Setup Instructions
+### 1. Backend
 
-### Backend Setup
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+- **Windows (PowerShell):** `.\venv\Scripts\Activate.ps1`  
+- **Windows (cmd):** `venv\Scripts\activate.bat`  
+- **macOS/Linux:** `source venv/bin/activate`
+
+```bash
 pip install -r requirements.txt
-cp .env.example .env  # Configure your API keys
+```
+
+Copy env and add your keys:
+
+```bash
+copy .env.example .env   # Windows
+# or: cp .env.example .env   # macOS/Linux
+```
+
+Edit `backend/.env` (see [Environment variables](#environment-variables) below).
+
+Start the server:
+
+```bash
 python app.py
 ```
 
-### Frontend Setup
+Backend runs at **http://localhost:5000** (or the port shown in the terminal).
+
+### 2. Frontend
+
+In a **new terminal**:
+
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
+Frontend runs at **http://localhost:5173**. Use this URL in the browser; Vite proxies `/api` to the backend.
+
+### 3. Use the app
+
+1. Open **http://localhost:5173**
+2. Register or log in
+3. Create a goal (Profile → Goals) or complete onboarding
+4. Add contributions on the home screen; levels and daily amount update from your goal and (if you upload a statement) from statement data
+
 ## Environment Variables
 
-### Backend (.env)
+### Backend (`backend/.env`)
+
+| Variable           | Required | Description |
+|--------------------|----------|-------------|
+| `MONGODB_URI`      | Yes      | MongoDB Atlas connection string |
+| `JWT_SECRET`       | Yes      | Secret for signing JWT tokens |
+| `GOOGLE_AI_API_KEY`| Yes      | Google AI (Gemini) API key for goals and chat |
+| `NESSIE_API_KEY`  | No       | Optional; for banking API |
+
+Get a Gemini key: [Google AI Studio](https://aistudio.google.com/apikey).
+
+### Frontend
+
+In development, the frontend talks to the backend via Vite’s proxy (no `.env` needed). For production, set `VITE_API_BASE_URL` to your backend API base URL.
+
+## Project Structure
+
 ```
-MONGODB_URI=your_mongodb_connection_string
-JWT_SECRET=your_jwt_secret_key
-NESSIE_API_KEY=your_nessie_api_key
-GOOGLE_AI_API_KEY=your_google_ai_api_key
+XPense/
+├── backend/
+│   ├── app.py              # Flask app and API routes
+│   ├── requirements.txt
+│   ├── .env                # Your keys (create from .env.example)
+│   ├── config/             # DB connection
+│   ├── models/              # MongoDB models (user, goal, post, etc.)
+│   ├── utils/               # Auth, AI calculator, statement helpers
+│   └── data/                # Mock statement data (used when no PDF parsing)
+├── frontend/
+│   ├── src/
+│   │   ├── App.jsx
+│   │   ├── components/      # Screens and UI
+│   │   ├── context/         # Auth, game state
+│   │   └── services/        # API client
+│   ├── package.json
+│   └── vite.config.js      # Proxy /api → backend
+└── README.md
 ```
 
-### Frontend (.env)
-```
-VITE_API_BASE_URL=http://localhost:5000/api
-```
+## Features
 
-## Demo
-Demo user credentials will be added before presentation.
+- **Auth** — Register, login, JWT
+- **Goals** — Create goals, target amount/date, AI-calculated levels and daily amount
+- **Contributions** — Add money to goals; level up and complete goals (auto-archived)
+- **Bank statement** — Upload a PDF; if parsing isn’t available, app uses built-in sample data and still updates daily amount and levels
+- **Gamification** — Points, coins, streaks, leaderboard, quests
+- **Social** — Feed (post, like, comment), nudges, veto requests
+- **AI** — Goal suggestions and chat (Gemini)
 
-## Timeline
-15-hour hackathon implementation with checkpoints at:
-- Hour 4-5: Core integration test
-- Hour 8-9: Full feature test
-- Hour 12-15: Deployment and demo prep
+## Bank statement / PDF upload
+
+- Upload is supported without installing any PDF library.
+- If the server has **pdfplumber** installed, PDFs are parsed and transactions are extracted.
+- If not (default), uploads still succeed and the app uses **built-in sample transaction data** so spending analysis, daily amount, and levels all update as if a statement was processed.
+
+## Team
+
+- **Anna** — Backend (Flask, MongoDB, APIs)  
+- **Aadya** — Frontend (React, UI/UX)  
+- **Suhani** — Integration and features  

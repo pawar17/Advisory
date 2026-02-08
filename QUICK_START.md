@@ -162,7 +162,7 @@ Frontend is now running at: http://localhost:5173
 ## 📂 Project Structure
 
 ```
-Advisory/
+XPense/
 ├── backend/              # Flask backend (all working)
 │   ├── app.py           # Main server (all endpoints)
 │   ├── models/          # Database models
