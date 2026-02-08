@@ -53,6 +53,28 @@ veto_request_model = VetoRequestModel(db)
 bank_statement_model = BankStatement(db)
 nudge_model = Nudge(db)
 
+
+def _serialize_user_for_json(user):
+    """Return a JSON-serializable copy of user (ObjectId -> str, datetime -> iso)."""
+    if not user:
+        return None
+    from bson import ObjectId
+    from datetime import datetime
+    out = {}
+    for k, v in user.items():
+        if k == "password_hash":
+            continue
+        if isinstance(v, ObjectId):
+            out[k] = str(v)
+        elif isinstance(v, datetime):
+            out[k] = v.isoformat() + "Z" if v.tzinfo is None else v.isoformat()
+        elif isinstance(v, list) and v and isinstance(v[0], ObjectId):
+            out[k] = [str(x) for x in v]
+        else:
+            out[k] = v
+    return out
+
+
 # ============================================================================
 # AUTHENTICATION ROUTES
 # ============================================================================
@@ -153,11 +175,7 @@ def get_profile():
         if not user:
             return jsonify({"error": "User not found"}), 404
 
-        # Remove sensitive data
-        user.pop('password_hash', None)
-        user['_id'] = str(user['_id'])
-
-        return jsonify({"user": user}), 200
+        return jsonify({"user": _serialize_user_for_json(user)}), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -178,9 +196,7 @@ def update_profile():
         user = user_model.find_by_id(request.user_id)
         if not user:
             return jsonify({"error": "User not found"}), 404
-        user.pop('password_hash', None)
-        user['_id'] = str(user['_id'])
-        return jsonify({"user": user}), 200
+        return jsonify({"user": _serialize_user_for_json(user)}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -260,6 +276,42 @@ def pop_city_place():
                 "longest_streak": user.get('longest_streak', 0),
             }
         }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/gamification/streak-calendar', methods=['GET'])
+@jwt_required
+def get_streak_calendar():
+    """Get which days in a month had positive net (achieved). Query: year, month (default: current)."""
+    try:
+        from datetime import datetime as dt
+        from calendar import monthrange
+        year = request.args.get('year', type=int)
+        month = request.args.get('month', type=int)
+        now = dt.utcnow()
+        if not year:
+            year = now.year
+        if not month:
+            month = now.month
+        start = dt(year, month, 1)
+        last_day = monthrange(year, month)[1]
+        end = dt(year, month, last_day)
+        entries = daily_flow_model.get_user_entries(request.user_id, start_date=start, end_date=end)
+        days_achieved = []
+        for e in entries:
+            net = e.get("net")
+            if net is None:
+                inc = float(e.get("income") or 0)
+                exp = float(e.get("expenses") if e.get("expenses") is not None else e.get("expense") or 0)
+                net = inc - exp
+            if net >= 0 and e.get("date"):
+                d = e["date"]
+                if hasattr(d, "day"):
+                    days_achieved.append(d.day)
+                else:
+                    days_achieved.append(int(str(d)[8:10]))
+        return jsonify({"year": year, "month": month, "days": sorted(set(days_achieved))}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -345,9 +397,21 @@ def create_goal():
             target_date=target_date
         )
 
-        # Calculate levels with AI
+        # Calculate levels with AI (use bank statement income/expenses when available)
         goal = goal_model.get_goal_by_id(goal_id)
         user = user_model.find_by_id(request.user_id)
+        monthly_income = 3000
+        avg_expenses = 2200
+        try:
+            txns = bank_statement_model.get_user_transactions(request.user_id, limit=500)
+            if txns:
+                income = sum(float(t.get('amount') or 0) for t in txns if float(t.get('amount') or 0) > 0)
+                expenses = sum(abs(float(t.get('amount') or 0)) for t in txns if float(t.get('amount') or 0) < 0)
+                if income > 0 or expenses > 0:
+                    monthly_income = max(1, round(income, 2)) if income > 0 else 3000
+                    avg_expenses = round(expenses, 2) if expenses > 0 else 2200
+        except Exception:
+            pass
 
         ai_result = calculate_levels_with_ai(
             {
@@ -357,9 +421,10 @@ def create_goal():
                 'target_date': target_date
             },
             {
-                'monthly_income': 3000,  # Default, can be calculated from transactions
-                'avg_expenses': 2200,
-                'current_streak': user.get('current_streak', 0)
+                'monthly_income': monthly_income,
+                'avg_expenses': avg_expenses,
+                'current_streak': user.get('current_streak', 0),
+                'from_bank_statement': monthly_income != 3000 or avg_expenses != 2200,
             }
         )
 
@@ -414,13 +479,30 @@ def contribute_to_goal(goal_id):
 
         # Get old level
         old_level = goal['current_level']
+        amount_left = float(amount)
 
-        # Contribute
-        goal_model.contribute(goal_id, float(amount))
+        # Contribute (caps at target; remainder can go to next goal)
+        result, remainder = goal_model.contribute(goal_id, amount_left)
+        if result is None:
+            return jsonify({"error": "Goal not found"}), 404
+        amount_left = remainder
+        # If contribution exceeded goal target, apply remainder to next active goal
+        while amount_left > 0:
+            goals = goal_model.get_user_goals(request.user_id)
+            next_active = next((g for g in goals if g["status"] == "active"), None)
+            if not next_active:
+                break
+            next_id = str(next_active["_id"])
+            if next_id == str(goal_id):
+                break
+            result, remainder = goal_model.contribute(next_id, amount_left)
+            if result is None:
+                break
+            amount_left = remainder
 
-        # Get updated goal
+        # Get updated goal (the one user originally contributed to)
         updated_goal = goal_model.get_goal_by_id(goal_id)
-        new_level = updated_goal['current_level']
+        new_level = updated_goal['current_level'] if updated_goal else old_level
 
         # Award points if leveled up
         if new_level > old_level:
@@ -455,9 +537,9 @@ def contribute_to_goal(goal_id):
 @app.route('/api/quests/available', methods=['GET'])
 @jwt_required
 def get_available_quests():
-    """Get available quests"""
+    """Get available quests (excludes ones user has already accepted or completed)."""
     try:
-        quests = quest_model.get_available_quests(limit=10)
+        quests = quest_model.get_available_quests(limit=10, user_id=request.user_id)
 
         # Format response
         for quest in quests:
@@ -930,6 +1012,40 @@ def get_generated_quests():
                 "summary": f"Based on {mock['transactionCount']} transactions from your statement. Quests target your top spending categories.",
             },
         }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/quests/from-suggestion', methods=['POST'])
+@jwt_required
+def create_quest_from_suggestion():
+    """Create a quest from a suggested (generated) quest and add it to user's active quests. Body: name, description, category, points_reward, currency_reward."""
+    try:
+        data = request.json or {}
+        name = (data.get("name") or "").strip()
+        description = (data.get("description") or "").strip()
+        category = (data.get("category") or "milestone").strip().lower().replace(" ", "-")
+        points_reward = int(data.get("points_reward") or 25)
+        currency_reward = int(data.get("currency_reward") or 10)
+        if not name:
+            return jsonify({"error": "name is required"}), 400
+        quest_id = quest_model.create_quest_template(
+            name=name,
+            description=description,
+            category=category,
+            points_reward=points_reward,
+            currency_reward=currency_reward,
+            verification_type="manual",
+            duration_hours=24 * 7,
+        )
+        user_quest_id = quest_model.assign_quest_to_user(request.user_id, quest_id)
+        if not user_quest_id:
+            return jsonify({"error": "Could not assign quest"}), 500
+        return jsonify({
+            "message": "Quest added to your tracker",
+            "user_quest_id": str(user_quest_id),
+            "quest_id": str(quest_id),
+        }), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

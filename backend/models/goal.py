@@ -19,6 +19,9 @@ class Goal:
         # New goals go at end of queue
         last = self.collection.find_one({"user_id": user_id}, sort=[("order", -1)], projection={"order": 1})
         next_order = (last["order"] + 1) if last and "order" in last else 0
+        # If user already has an active goal, new goal starts as queued
+        has_active = self.collection.find_one({"user_id": user_id, "status": "active"})
+        initial_status = "queued" if has_active else "active"
 
         goal = {
             "user_id": user_id,
@@ -31,7 +34,7 @@ class Goal:
             "current_level": 0,
             "daily_target": 0,
             "level_thresholds": [],
-            "status": "active",  # active, completed, paused, queued
+            "status": initial_status,  # active, completed, paused, queued
             "order": next_order,  # queue order: lower = higher priority
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow(),
@@ -67,16 +70,36 @@ class Goal:
             {"$set": update_data}
         )
 
+    def _activate_next_goal(self, user_id, after_order):
+        """Set the next goal (by order) to active when current goal is completed."""
+        if isinstance(user_id, str):
+            user_id = ObjectId(user_id)
+        next_goal = self.collection.find_one(
+            {"user_id": user_id, "order": {"$gt": after_order}, "status": {"$in": ["queued", "paused"]}},
+            sort=[("order", 1)]
+        )
+        if next_goal:
+            self.collection.update_one(
+                {"_id": next_goal["_id"]},
+                {"$set": {"status": "active", "updated_at": datetime.utcnow()}}
+            )
+        return next_goal
+
     def contribute(self, goal_id, amount):
-        """Add money to a goal"""
+        """Add money to a goal. Caps at target; returns (result, remainder)."""
         if isinstance(goal_id, str):
             goal_id = ObjectId(goal_id)
 
         goal = self.get_goal_by_id(goal_id)
         if not goal:
-            return None
+            return None, amount
 
-        new_amount = goal["current_amount"] + amount
+        target = goal["target_amount"]
+        current = goal["current_amount"]
+        # Cap at target so we don't overfill; remainder goes to next goal
+        amount_to_add = min(amount, max(0, target - current))
+        remainder = amount - amount_to_add
+        new_amount = current + amount_to_add
 
         # Calculate new level
         new_level = goal["current_level"]
@@ -90,11 +113,11 @@ class Goal:
         # Check if goal is completed
         status = goal["status"]
         completed_at = goal.get("completed_at")
-        if new_amount >= goal["target_amount"]:
+        if new_amount >= target:
             status = "completed"
             completed_at = datetime.utcnow()
 
-        return self.collection.update_one(
+        result = self.collection.update_one(
             {"_id": goal_id},
             {
                 "$set": {
@@ -106,6 +129,9 @@ class Goal:
                 }
             }
         )
+        if status == "completed":
+            self._activate_next_goal(goal["user_id"], goal["order"])
+        return result, remainder
 
     def set_level_system(self, goal_id, total_levels, level_thresholds, daily_target):
         """Update goal with AI-calculated level system"""

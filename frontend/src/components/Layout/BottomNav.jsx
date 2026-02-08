@@ -5,6 +5,7 @@ const navItems = [
   { id: 'play', icon: '🏗️', label: 'Play' },
   { id: 'quests', icon: '⭐', label: 'Quests' },
   { id: 'leaderboard', icon: '🏆', label: 'Rank' },
+  { id: 'calendar', icon: '📅', label: 'Streak' },
   { id: 'social', icon: '👥', label: 'Court' },
   { id: 'profile', icon: '👤', label: 'Self' },
 ];

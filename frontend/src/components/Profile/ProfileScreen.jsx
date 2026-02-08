@@ -11,7 +11,7 @@ const TABS = [
   { id: 'goals', label: 'Goals' },
 ];
 
-export default function ProfileScreen({ user, goal, onGoalsChange }) {
+export default function ProfileScreen({ user, goal, onGoalsChange, refetchGoals }) {
   const { logout } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
   const [goals, setGoals] = useState([]);
@@ -30,6 +30,7 @@ export default function ProfileScreen({ user, goal, onGoalsChange }) {
   const handleGoalsChange = (newGoals) => {
     setGoals(newGoals || []);
     onGoalsChange?.(newGoals);
+    refetchGoals?.();
   };
 
   return (

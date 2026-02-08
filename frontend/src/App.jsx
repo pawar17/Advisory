@@ -9,6 +9,7 @@ import BottomNav from './components/Layout/BottomNav';
 import StatCard from './components/Dashboard/StatCard';
 import GoalProgress from './components/Dashboard/GoalProgress';
 import Leaderboard from './components/Dashboard/Leaderboard';
+import StreakCalendar from './components/Dashboard/StreakCalendar';
 import QuestCard from './components/Quests/QuestCard';
 import ProfileScreen from './components/Profile/ProfileScreen';
 import SocialFeed from './components/Social/SocialFeed';
@@ -42,6 +43,8 @@ export default function App() {
     completeQuest,
     fetchAll,
     fetchStats,
+    fetchGoals,
+    fetchQuests,
   } = useGame();
 
   const [activeTab, setActiveTab] = useState('home');
@@ -377,7 +380,7 @@ export default function App() {
 
       <HUD user={fullUser} goal={appGoal} onAIClick={() => handleTabChange('ai')} onBack={history.length > 1 ? handleBack : undefined} />
 
-      <main className="flex-1 overflow-y-auto px-4 py-6 hide-scrollbar pb-32">
+      <main className="flex-1 flex flex-col min-h-0 overflow-y-auto px-4 py-6 hide-scrollbar pb-32">
         <AnimatePresence mode="wait">
           {activeTab === 'home' && (
             <motion.div key="home" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="space-y-8">
@@ -475,23 +478,51 @@ export default function App() {
                   </div>
                 )}
               </section>
-              {generatedQuests.length > 0 && (
+              {generatedQuests.length > 0 && (() => {
+                const addedOrCompletedNames = new Set((appQuests || []).map((aq) => aq.name));
+                const stillSuggested = generatedQuests.filter((q) => !addedOrCompletedNames.has(q.name));
+                if (stillSuggested.length === 0) return null;
+                return (
                 <section className="space-y-4">
                   <h3 className="font-heading text-sm uppercase tracking-widest border-b-2 border-brand-black pb-1">Suggested for you (from your spending)</h3>
                   <p className="text-[10px] text-gray-500">
                     {generatedQuestsBasedOn?.summary ?? 'Personalized quest ideas based on your spending. Upload statements in Profile → Bank Statements to improve suggestions.'}
                   </p>
                   <div className="space-y-3">
-                    {generatedQuests.map((q, i) => (
-                      <div key={i} className="editorial-card p-4">
-                        <p className="font-bold text-sm">{q.name}</p>
-                        <p className="text-xs text-gray-600">{q.description}</p>
-                        <p className="text-[10px] text-gray-500 mt-1">+{q.points_reward ?? 0} XP · +{q.currency_reward ?? 0} coins</p>
+                    {stillSuggested.map((q, i) => (
+                      <div key={i} className="editorial-card p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-sm">{q.name}</p>
+                          <p className="text-xs text-gray-600">{q.description}</p>
+                          <p className="text-[10px] text-gray-500 mt-1">+{q.points_reward ?? 0} XP · +{q.currency_reward ?? 0} coins when done</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await questService.addFromSuggestion({
+                                name: q.name,
+                                description: q.description || '',
+                                category: q.category || 'milestone',
+                                points_reward: q.points_reward ?? 25,
+                                currency_reward: q.currency_reward ?? 10,
+                              });
+                              toast.success('Added to your tracker! Mark it done when you complete it.');
+                              fetchQuests();
+                            } catch (err) {
+                              toast.error(err.response?.data?.error || 'Could not add quest');
+                            }
+                          }}
+                          className="shrink-0 py-2 px-4 border-2 border-brand-black text-[10px] font-mono font-bold uppercase rounded-xl hover:bg-brand-yellow"
+                        >
+                          Add to my quests
+                        </button>
                       </div>
                     ))}
                   </div>
                 </section>
-              )}
+                );
+              })()}
               <section className="space-y-4">
                 <h3 className="font-heading text-sm uppercase tracking-widest border-b-2 border-brand-black pb-1">Available Missions</h3>
                 <div className="space-y-6">
@@ -500,6 +531,16 @@ export default function App() {
                   ))}
                 </div>
               </section>
+            </motion.div>
+          )}
+
+          {activeTab === 'calendar' && (
+            <motion.div key="calendar" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="flex flex-col flex-1 min-h-0 w-full">
+              <div className="space-y-2 shrink-0">
+                <h2 className="font-heading text-2xl uppercase tracking-tighter">Streak Calendar</h2>
+                <p className="font-mono text-[10px] text-gray-500 uppercase tracking-widest font-bold">Days you achieved this month</p>
+              </div>
+              <StreakCalendar />
             </motion.div>
           )}
 
@@ -560,7 +601,7 @@ export default function App() {
 
           {activeTab === 'profile' && (
             <motion.div key="profile" variants={pageVariants} initial="initial" animate="animate" exit="exit">
-              <ProfileScreen user={fullUser} goal={appGoal} />
+              <ProfileScreen user={fullUser} goal={appGoal} refetchGoals={fetchGoals} />
             </motion.div>
           )}
 

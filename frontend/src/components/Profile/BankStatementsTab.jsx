@@ -190,24 +190,37 @@ export default function BankStatementsTab() {
 
             <div className="editorial-card p-4">
               <p className="text-[10px] font-mono uppercase text-gray-500 mb-3">By category (pie)</p>
-              <ResponsiveContainer width="100%" height={240}>
-                <PieChart>
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
                   <Pie
                     data={chartData}
                     dataKey="value"
                     nameKey="name"
                     cx="50%"
                     cy="50%"
-                    outerRadius={80}
-                    label={({ name, value }) => `${name} $${value}`}
+                    outerRadius={70}
+                    label={false}
                   >
                     {chartData.map((_, index) => (
                       <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} stroke="#1A1A1A" strokeWidth={1} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value) => [`$${value}`, 'Spent']} />
+                  <Tooltip formatter={(value) => [`$${Number(value).toLocaleString()}`, 'Spent']} />
                 </PieChart>
               </ResponsiveContainer>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1.5 mt-3 pt-3 border-t border-gray-200">
+                {chartData.map((d, index) => (
+                  <div key={d.name} className="flex items-center gap-2 min-w-0">
+                    <span
+                      className="shrink-0 w-2.5 h-2.5 rounded-full border border-brand-black/20"
+                      style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
+                    />
+                    <span className="text-[10px] font-mono truncate" title={`${d.name} $${d.value.toLocaleString()}`}>
+                      {d.name} ${d.value.toLocaleString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div className="editorial-card p-4">

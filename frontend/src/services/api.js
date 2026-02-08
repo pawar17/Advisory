@@ -70,7 +70,8 @@ export const questService = {
   getActive: () => api.get('/quests/active'),
   getGenerated: () => api.get('/quests/generated'),
   accept: (questId) => api.post(`/quests/${questId}/accept`),
-  complete: (userQuestId) => api.post(`/quests/${userQuestId}/complete`)
+  complete: (userQuestId) => api.post(`/quests/${userQuestId}/complete`),
+  addFromSuggestion: (body) => api.post('/quests/from-suggestion', body),
 };
 
 // ============================================================================
@@ -81,6 +82,7 @@ export const gamificationService = {
   getLeaderboard: (limit = 100) => api.get(`/gamification/leaderboard?limit=${limit}`),
   getFriendsLeaderboard: (limit = 100) => api.get(`/gamification/leaderboard/friends?limit=${limit}`),
   placePopCityItem: (payload) => api.post('/gamification/pop-city-place', payload || {}),
+  getStreakCalendar: (year, month) => api.get(`/gamification/streak-calendar?year=${year}&month=${month}`),
 };
 
 // ============================================================================

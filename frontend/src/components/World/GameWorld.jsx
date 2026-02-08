@@ -34,7 +34,8 @@ export default function GameWorld({ goalType, progressPercent, currency, initial
     setPlacedItems((prev) => ({ ...(initialPlacements || {}), ...prev }));
   }, [initialPlacements]);
 
-  const unlockedCount = Math.max(4, Math.floor(progressPercent / 4));
+  // Unlock 1 box per 25 coins (100 coins = 4 boxes, etc.), max 25
+  const unlockedCount = Math.min(25, Math.floor(currency / ITEM_COST));
   const items = WORLD_ITEMS[goalType] || WORLD_ITEMS.other;
   const canAfford = currency >= ITEM_COST;
 
@@ -51,6 +52,7 @@ export default function GameWorld({ goalType, progressPercent, currency, initial
     const validIndex = indexToUse != null && !Number.isNaN(indexToUse) && indexToUse >= 0 && indexToUse < 25;
     const validDrop =
       validIndex &&
+      unlockedCount > 0 &&
       indexToUse < unlockedCount &&
       !placedItems[indexToUse] &&
       canAfford;
@@ -85,7 +87,7 @@ export default function GameWorld({ goalType, progressPercent, currency, initial
     if (clientX != null && clientY != null) lastPointerRef.current = { x: clientX, y: clientY };
     if (clientX == null || clientY == null) return;
     const index = getCellIndexFromPoint(clientX, clientY);
-    if (index != null && index >= 0 && index < unlockedCount && !placedItems[index]) {
+    if (index != null && index >= 0 && unlockedCount > 0 && index < unlockedCount && !placedItems[index]) {
       hoveredTileRef.current = index;
       setHoveredTile(index);
     } else {
@@ -136,7 +138,7 @@ export default function GameWorld({ goalType, progressPercent, currency, initial
       <div className="w-full space-y-3">
         <div className="flex justify-between items-center border-b-2 border-brand-black pb-1">
           <h3 className="font-heading text-xs uppercase tracking-widest">Store</h3>
-          <span className="font-mono text-[10px] text-gray-500 uppercase font-bold">25 💰 each · 1 = 25, 2 = 50</span>
+          <span className="font-mono text-[10px] text-gray-500 uppercase font-bold">{unlockedCount}/25 slots · 25 💰 each</span>
         </div>
         <div className="flex flex-wrap gap-3 justify-center py-4 px-2 sm:py-5 bg-white rounded-2xl sm:rounded-3xl border-2 border-brand-black shadow-[4px_4px_0px_#1A1A1A]">
           {items.map((item) => (

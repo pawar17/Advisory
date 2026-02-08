@@ -29,9 +29,16 @@ class SideQuest:
         result = self.collection.insert_one(quest)
         return result.inserted_id
 
-    def get_available_quests(self, limit=10):
-        """Get available quest templates"""
-        return list(self.collection.find({"is_active": True}).limit(limit))
+    def get_available_quests(self, limit=10, user_id=None):
+        """Get available quest templates. If user_id given, exclude templates user has already accepted or completed."""
+        query = {"is_active": True}
+        if user_id:
+            if isinstance(user_id, str):
+                user_id = ObjectId(user_id)
+            taken = self.user_quests.distinct("quest_id", {"user_id": user_id})
+            if taken:
+                query["_id"] = {"$nin": taken}
+        return list(self.collection.find(query).limit(limit))
 
     def assign_quest_to_user(self, user_id, quest_id):
         """Assign a quest to a user"""

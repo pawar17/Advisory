@@ -25,7 +25,21 @@ def calculate_levels_with_ai(goal_data, user_data=None):
 
     # Basic fallback calculation
     remaining = goal_data['target_amount'] - goal_data.get('current_amount', 0)
+    current = goal_data.get('current_amount', 0)
 
+    # Calculate days to goal
+    days_to_goal = 180
+    if goal_data.get('target_date'):
+        target_date = goal_data['target_date']
+        if isinstance(target_date, str):
+            target_date = datetime.fromisoformat(target_date.replace('Z', '+00:00'))
+        days_to_goal = max((target_date - datetime.utcnow()).days, 30)
+
+    monthly_income = user_data.get('monthly_income') or 3000
+    avg_expenses = user_data.get('avg_expenses') or 2200
+    from_statement = user_data.get('from_bank_statement', False)
+
+    # Default level count by remaining amount
     if remaining < 500:
         total_levels = 10
     elif remaining < 2000:
@@ -37,54 +51,44 @@ def calculate_levels_with_ai(goal_data, user_data=None):
 
     amount_per_level = remaining / total_levels
     level_thresholds = [
-        goal_data.get('current_amount', 0) + (amount_per_level * i)
+        current + (amount_per_level * i)
         for i in range(1, total_levels + 1)
     ]
-
-    # Calculate daily target (assuming 6 months)
-    days_to_goal = 180
-    if goal_data.get('target_date'):
-        target_date = goal_data['target_date']
-        if isinstance(target_date, str):
-            target_date = datetime.fromisoformat(target_date.replace('Z', '+00:00'))
-        days_to_goal = max((target_date - datetime.utcnow()).days, 30)
-
     daily_target = round(remaining / days_to_goal, 2)
 
-    # Try AI enhancement
+    # Try AI enhancement (Gemini): suggest levels and daily target from income/expenses
     try:
         prompt = f"""
-        Given this savings goal, provide financial analysis:
+You are a financial coach. Using the user's goal and (when available) their bank statement income and expenses, suggest a realistic level plan and messages.
 
-        Goal Details:
-        - Target: ${goal_data['target_amount']}
-        - Current: ${goal_data.get('current_amount', 0)}
-        - Remaining: ${remaining}
-        - Category: {goal_data.get('category', 'general')}
-        - Days to goal: {days_to_goal}
+Goal:
+- Target amount: ${goal_data['target_amount']}
+- Current amount: ${current}
+- Remaining: ${remaining}
+- Category: {goal_data.get('category', 'general')}
+- Days to goal: {days_to_goal}
 
-        User Profile (if available):
-        - Monthly Income: ${user_data.get('monthly_income', 3000)}
-        - Monthly Expenses: ${user_data.get('avg_expenses', 2200)}
-        - Current Streak: {user_data.get('current_streak', 0)} days
+User finances (from bank statement when available):
+- Monthly income (earnings): ${monthly_income}
+- Monthly expenses: ${avg_expenses}
+- From bank statement data: {from_statement}
+- Current streak: {user_data.get('current_streak', 0)} days
 
-        Provide:
-        1. daily_savings_tip: One specific, actionable tip to save money daily
-        2. milestone_message_25: Short motivational message for reaching 25% (max 50 chars)
-        3. milestone_message_50: Short motivational message for reaching 50% (max 50 chars)
-        4. milestone_message_75: Short motivational message for reaching 75% (max 50 chars)
-        5. completion_message: Celebratory message for 100% (max 50 chars)
+Suggest a realistic plan:
+1. suggested_total_levels: number between 10 and 50 (more levels = smaller steps; consider income minus expenses to keep each level achievable).
+2. suggested_daily_target: daily savings amount that is realistic given their income and expenses (number, e.g. 15.50).
+3. daily_savings_tip: One specific, actionable tip (max 80 chars).
+4. milestone_message_25, milestone_message_50, milestone_message_75: Short motivational messages (max 50 chars each).
+5. completion_message: Celebratory message for 100% (max 50 chars).
 
-        Return as valid JSON only, no markdown, no extra text.
-        Example: {{"daily_savings_tip": "Skip one coffee per week", "milestone_message_25": "Quarter way there!", ...}}
-        """
+Return valid JSON only, no markdown. Example:
+{{"suggested_total_levels": 25, "suggested_daily_target": 12.50, "daily_savings_tip": "Skip one takeout per week", "milestone_message_25": "Quarter way there!", "milestone_message_50": "Halfway!", "milestone_message_75": "Almost there!", "completion_message": "Goal achieved!"}}
+"""
 
         model = genai.GenerativeModel(GEMINI_GOAL_MODEL)
         response = model.generate_content(prompt)
 
-        # Try to parse AI response
         ai_text = response.text.strip()
-        # Remove markdown code blocks if present
         if '```json' in ai_text:
             ai_text = ai_text.split('```json')[1].split('```')[0].strip()
         elif '```' in ai_text:
@@ -92,16 +96,26 @@ def calculate_levels_with_ai(goal_data, user_data=None):
 
         ai_data = json.loads(ai_text)
 
+        # Use AI-suggested levels if valid
+        sug_levels = ai_data.get('suggested_total_levels')
+        if isinstance(sug_levels, (int, float)) and 10 <= int(sug_levels) <= 50:
+            total_levels = int(sug_levels)
+            amount_per_level = remaining / total_levels
+            level_thresholds = [current + (amount_per_level * i) for i in range(1, total_levels + 1)]
+
+        sug_daily = ai_data.get('suggested_daily_target')
+        if isinstance(sug_daily, (int, float)) and float(sug_daily) >= 0:
+            daily_target = round(float(sug_daily), 2)
+
         return {
             'total_levels': total_levels,
             'level_thresholds': level_thresholds,
             'daily_target': daily_target,
-            'ai_suggestions': ai_data
+            'ai_suggestions': {k: v for k, v in ai_data.items() if k not in ('suggested_total_levels', 'suggested_daily_target')}
         }
 
     except Exception as e:
         print(f"AI calculation failed: {e}, using fallback")
-        # Fallback with basic suggestions
         return {
             'total_levels': total_levels,
             'level_thresholds': level_thresholds,
