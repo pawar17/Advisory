@@ -208,9 +208,9 @@ Advisory/
 3. [ ] Create frontend/.env file (already created with default)
 4. [ ] Run `npm run dev` to start frontend
 5. [ ] Test login with demo users
-6. [ ] Test all features
-7. [ ] Fix any UI bugs or styling issues
-8. [ ] Add any additional animations/polish
+6. [ ] Test all features (Dashboard, Quests, Leaderboard, **Profile**)
+7. [ ] Game UI style from GoogleStudio applied (SavePop branding, editorial cards, coins/XP in header)
+8. [ ] Profile: view stats, edit name, see active goal; currency/stats refresh after contribute and quest complete
 
 ### For Suhani (Integration):
 1. ✅ API client is complete
@@ -272,7 +272,7 @@ After running seed script, use these to login:
 If you have extra time or want to continue development:
 
 ### Easy Additions (1-2 hours each):
-- [ ] Profile page with user stats
+- [x] Profile page with user stats (view + edit name, game stats, active goal)
 - [ ] Goal edit/delete functionality
 - [ ] Quest history page
 - [ ] Dark mode toggle

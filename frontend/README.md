@@ -1,16 +1,19 @@
-# React + Vite
+# SavePop Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + Vite app for the SavePop gamified savings game. All app code lives under `frontend/`.
 
-Currently, two official plugins are available:
+## Run locally
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+1. **Backend** (from repo root):  
+   `cd backend && pip install -r requirements.txt && python app.py`  
+   Backend should be at `http://localhost:5000`.
 
-## React Compiler
+2. **Frontend**:  
+   `npm install && npm run dev`  
+   In dev, `/api` is proxied to the backend so login and API calls work without CORS.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+3. **Create account**: Open the app → “Create account” → fill name, username, email, password → Create account. You’re logged in after that. Use the same username/password to log in later.
 
-## Expanding the ESLint configuration
+## Optional env
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- `VITE_API_BASE_URL` – Override API base (e.g. for production). Default in dev: `/api` (proxied to backend).

@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+// In dev always use /api so Vite proxy hits backend (avoids CORS). Production uses VITE_API_BASE_URL.
+const API_BASE_URL = import.meta.env.DEV ? '/api' : (import.meta.env.VITE_API_BASE_URL || '/api');
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -24,7 +25,6 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
-      window.location.href = '/login';
     }
     return Promise.reject(error);
   }
@@ -45,6 +45,7 @@ export const authService = {
 
 export const userService = {
   getProfile: () => api.get('/users/profile'),
+  updateProfile: (data) => api.patch('/users/profile', data),
   getGameStats: () => api.get('/gamification/stats')
 };
 

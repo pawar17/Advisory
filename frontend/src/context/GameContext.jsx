@@ -1,125 +1,149 @@
-import { createContext, useState, useContext, useEffect } from 'react';
-import { userService, goalService, questService, gamificationService } from '../services/api';
+import { createContext, useState, useContext, useEffect, useMemo } from 'react';
+import { goalService, questService, userService, gamificationService } from '../services/api';
 import { useAuth } from './AuthContext';
 
 const GameContext = createContext();
 
+function toAppGoal(g) {
+  if (!g) return null;
+  return {
+    id: g._id,
+    name: g.goal_name,
+    category: g.goal_category || 'other',
+    targetAmount: Number(g.target_amount),
+    currentAmount: Number(g.current_amount),
+    level: g.current_level ?? 1,
+    totalLevels: g.total_levels ?? 1,
+    dailyTarget: Number(g.daily_target ?? 0),
+    milestones: [],
+  };
+}
+
+function toAppQuest(q) {
+  const d = q.quest_details || q;
+  const id = q._id || d._id;
+  return {
+    id,
+    name: d.quest_name || d.name,
+    description: d.quest_description || d.description || '',
+    category: (d.quest_category || d.category || 'milestone').toLowerCase().replace(/\s/g, '-'),
+    pointsReward: d.points_reward ?? 0,
+    currencyReward: d.currency_reward ?? 0,
+    status: q.status === 'active' ? 'active' : q.status === 'completed' ? 'completed' : 'available',
+  };
+}
+
 export function GameProvider({ children }) {
   const { isAuthenticated } = useAuth();
-  const [stats, setStats] = useState({
-    points: 0,
-    currency: 0,
-    streak: 0,
-    longest_streak: 0
-  });
+  const [stats, setStats] = useState({ points: 0, currency: 0, streak: 0, longest_streak: 0 });
   const [goals, setGoals] = useState([]);
   const [activeQuests, setActiveQuests] = useState([]);
   const [availableQuests, setAvailableQuests] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchAllData();
-    }
-  }, [isAuthenticated]);
-
-  const fetchAllData = async () => {
-    try {
-      await Promise.all([
-        fetchStats(),
-        fetchGoals(),
-        fetchActiveQuests(),
-        fetchAvailableQuests(),
-        fetchLeaderboard()
-      ]);
-    } catch (error) {
-      console.error('Failed to fetch game data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const fetchStats = async () => {
     try {
       const { data } = await userService.getGameStats();
       setStats(data);
-    } catch (error) {
-      console.error('Failed to fetch stats:', error);
-    }
+    } catch (_) {}
   };
 
   const fetchGoals = async () => {
     try {
       const { data } = await goalService.getAll();
-      setGoals(data.goals);
-    } catch (error) {
-      console.error('Failed to fetch goals:', error);
-    }
+      setGoals(data.goals || []);
+    } catch (_) {}
   };
 
-  const fetchActiveQuests = async () => {
+  const fetchQuests = async () => {
     try {
-      const { data } = await questService.getActive();
-      setActiveQuests(data.quests);
-    } catch (error) {
-      console.error('Failed to fetch active quests:', error);
-    }
-  };
-
-  const fetchAvailableQuests = async () => {
-    try {
-      const { data } = await questService.getAvailable();
-      setAvailableQuests(data.quests);
-    } catch (error) {
-      console.error('Failed to fetch available quests:', error);
-    }
+      const [activeRes, availableRes] = await Promise.all([
+        questService.getActive(),
+        questService.getAvailable(),
+      ]);
+      setActiveQuests(activeRes.data.quests || []);
+      setAvailableQuests(availableRes.data.quests || []);
+    } catch (_) {}
   };
 
   const fetchLeaderboard = async () => {
     try {
       const { data } = await gamificationService.getLeaderboard();
-      setLeaderboard(data.leaderboard);
-    } catch (error) {
-      console.error('Failed to fetch leaderboard:', error);
+      setLeaderboard(data.leaderboard || []);
+    } catch (_) {}
+  };
+
+  const fetchAll = async () => {
+    if (!isAuthenticated) return;
+    setLoading(true);
+    try {
+      await Promise.all([fetchStats(), fetchGoals(), fetchQuests(), fetchLeaderboard()]);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const refreshStats = () => {
-    fetchStats();
+  useEffect(() => {
+    if (isAuthenticated) fetchAll();
+  }, [isAuthenticated]);
+
+  const activeGoal = useMemo(() => goals.find((g) => g.status === 'active') || null, [goals]);
+  const appGoal = useMemo(() => toAppGoal(activeGoal), [activeGoal]);
+  const appQuests = useMemo(() => {
+    const active = (activeQuests || []).map((q) => ({ ...q, status: 'active' }));
+    const available = (availableQuests || []).map((q) => ({ ...q, status: 'available' }));
+    return [...active.map(toAppQuest), ...available.map(toAppQuest)];
+  }, [activeQuests, availableQuests]);
+
+  const createGoal = async (data) => {
+    const res = await goalService.create(data);
+    await fetchGoals();
+    return res.data.goal;
   };
 
-  const refreshGoals = () => {
-    fetchGoals();
+  const contribute = async (goalId, amount) => {
+    const res = await goalService.contribute(goalId, amount);
+    await fetchGoals();
+    await fetchStats();
+    return res.data;
   };
 
-  const refreshQuests = () => {
-    fetchActiveQuests();
-    fetchAvailableQuests();
+  const acceptQuest = async (questId) => {
+    await questService.accept(questId);
+    await fetchQuests();
   };
 
-  return (
-    <GameContext.Provider value={{
-      stats,
-      goals,
-      activeQuests,
-      availableQuests,
-      leaderboard,
-      loading,
-      refreshStats,
-      refreshGoals,
-      refreshQuests,
-      fetchAllData
-    }}>
-      {children}
-    </GameContext.Provider>
-  );
+  const completeQuest = async (userQuestId) => {
+    const res = await questService.complete(userQuestId);
+    await fetchQuests();
+    await fetchStats();
+    return res.data;
+  };
+
+  const value = {
+    stats,
+    goals,
+    activeGoal,
+    appGoal,
+    appQuests,
+    leaderboard,
+    loading,
+    fetchStats,
+    fetchGoals,
+    fetchQuests,
+    fetchAll,
+    createGoal,
+    contribute,
+    acceptQuest,
+    completeQuest,
+  };
+
+  return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
 }
 
 export const useGame = () => {
-  const context = useContext(GameContext);
-  if (!context) {
-    throw new Error('useGame must be used within GameProvider');
-  }
-  return context;
+  const ctx = useContext(GameContext);
+  if (!ctx) throw new Error('useGame must be used within GameProvider');
+  return ctx;
 };

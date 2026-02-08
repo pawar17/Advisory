@@ -139,6 +139,28 @@ def get_profile():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/users/profile', methods=['PATCH'])
+@jwt_required
+def update_profile():
+    """Update current user profile (name only for safety)"""
+    try:
+        data = request.json or {}
+        name = data.get('name')
+
+        if name is not None:
+            if not isinstance(name, str) or len(name.strip()) == 0:
+                return jsonify({"error": "Name must be a non-empty string"}), 400
+            user_model.update_user(request.user_id, {"name": name.strip()})
+
+        user = user_model.find_by_id(request.user_id)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        user.pop('password_hash', None)
+        user['_id'] = str(user['_id'])
+        return jsonify({"user": user}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/gamification/stats', methods=['GET'])
 @jwt_required
 def get_game_stats():
