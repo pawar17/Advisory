@@ -4,6 +4,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+try:
+    import certifi
+    CA_BUNDLE = certifi.where()
+except ImportError:
+    CA_BUNDLE = None
+
+
 class Database:
     def __init__(self):
         self.client = None
@@ -16,7 +23,11 @@ class Database:
             if not mongodb_uri:
                 raise ValueError("MONGODB_URI not found in environment variables")
 
-            self.client = MongoClient(mongodb_uri)
+            # Use certifi CA bundle for TLS (fixes SSL handshake errors on Render/cloud with MongoDB Atlas)
+            kwargs = {}
+            if CA_BUNDLE:
+                kwargs["tlsCAFile"] = CA_BUNDLE
+            self.client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=20000, **kwargs)
             db_name = os.getenv('MONGODB_DATABASE', 'samplebudgeting')
             self.db = self.client[db_name]
 
