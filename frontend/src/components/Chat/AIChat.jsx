@@ -2,9 +2,20 @@ import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { aiService } from '../../services/api';
 
+const LEARN_PROMPTS = [
+  'What is a down payment?',
+  "What's an emergency fund?",
+  'What is APR?',
+  'How much should I save for a car?',
+  'Why save before borrowing?',
+];
+
 export default function AIChat({ user, goal }) {
   const [messages, setMessages] = useState([
-    { role: 'assistant', text: `Hi ${user?.name ?? 'there'}! I'm SavePop Buddy. ✨ How's your "${goal?.name ?? 'goal'}" going today?` },
+    {
+      role: 'assistant',
+      text: "I'm your SavePop finance coach. 💡 Ask me about down payments, emergency funds, APR, or any money concept—I'll explain it in plain language.",
+    },
   ]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -14,9 +25,9 @@ export default function AIChat({ user, goal }) {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSend = async () => {
-    if (!input.trim()) return;
-    const userText = input;
+  const sendMessage = async (text) => {
+    const userText = (text || input).trim();
+    if (!userText) return;
     setInput('');
     setMessages((prev) => [...prev, { role: 'user', text: userText }]);
     setIsTyping(true);
@@ -30,13 +41,15 @@ export default function AIChat({ user, goal }) {
     }
   };
 
+  const handleSend = () => sendMessage(input);
+
   return (
     <div className="flex flex-col h-[70vh]">
       <div className="editorial-card p-4 rounded-3xl mb-4 flex items-center gap-3">
         <div className="w-10 h-10 bg-brand-lavender rounded-full flex items-center justify-center text-xl">🤖</div>
         <div>
-          <h3 className="font-bold text-gray-800 text-sm">SavePop Buddy</h3>
-          <p className="text-[10px] text-brand-lavender font-bold uppercase tracking-widest">Online ✨</p>
+          <h3 className="font-bold text-gray-800 text-sm">Finance Coach</h3>
+          <p className="text-[10px] text-brand-lavender font-bold uppercase tracking-widest">Learn down payments, APR & more</p>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto space-y-4 pr-2 hide-scrollbar">
@@ -67,13 +80,26 @@ export default function AIChat({ user, goal }) {
         )}
         <div ref={scrollRef} />
       </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {LEARN_PROMPTS.map((prompt) => (
+          <button
+            key={prompt}
+            type="button"
+            onClick={() => sendMessage(prompt)}
+            disabled={isTyping}
+            className="text-xs px-3 py-1.5 rounded-full bg-brand-lavender/20 text-gray-700 hover:bg-brand-lavender/40 disabled:opacity-50 transition-colors"
+          >
+            {prompt}
+          </button>
+        ))}
+      </div>
       <div className="mt-4 editorial-card p-2 flex gap-2 rounded-2xl">
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-          placeholder="Ask for saving tips..."
+          placeholder="Ask about down payments, emergency fund, APR..."
           className="flex-1 bg-transparent border-none focus:ring-0 text-sm px-3 placeholder:text-gray-300 rounded-xl"
         />
         <button type="button" onClick={handleSend} className="p-3 bg-brand-lavender text-white rounded-xl">

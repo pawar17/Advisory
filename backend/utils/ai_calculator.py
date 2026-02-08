@@ -8,6 +8,11 @@ load_dotenv()
 
 genai.configure(api_key=os.getenv('GOOGLE_AI_API_KEY'))
 
+# Current Gemini model IDs (see https://ai.google.dev/gemini-api/docs/models)
+GEMINI_CHAT_MODEL = "gemini-2.0-flash"
+GEMINI_CHAT_FALLBACK = "gemini-2.5-flash"
+GEMINI_GOAL_MODEL = "gemini-2.0-flash"
+
 def calculate_levels_with_ai(goal_data, user_data=None):
     """
     Calculate optimal savings levels using AI
@@ -72,7 +77,7 @@ def calculate_levels_with_ai(goal_data, user_data=None):
         Example: {{"daily_savings_tip": "Skip one coffee per week", "milestone_message_25": "Quarter way there!", ...}}
         """
 
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel(GEMINI_GOAL_MODEL)
         response = model.generate_content(prompt)
 
         # Try to parse AI response
@@ -110,34 +115,55 @@ def calculate_levels_with_ai(goal_data, user_data=None):
 
 def ai_chat_assistant(user_message, user_context):
     """
-    AI chatbot assistant for financial advice
+    AI chatbot that teaches finance concepts (down payments, emergency fund, APR, etc.)
+    for the SavePop savings app.
     """
+    api_key = os.getenv('GOOGLE_AI_API_KEY')
+    if not api_key or api_key.strip() in ('', 'your_google_ai_api_key'):
+        return (
+            "To use the finance coach, add your Google AI (Gemini) API key in the backend .env file as GOOGLE_AI_API_KEY. "
+            "Until then, here’s a quick tip: a down payment is the upfront cash you pay when buying something big (like a car or house); "
+            "the rest you borrow. Saving for it first helps you pay less interest and get better terms."
+        )
+
     try:
         prompt = f"""
-        You are a helpful, encouraging financial assistant for a gamified savings app.
+You are SavePop's friendly finance coach. Your main job is to teach personal finance concepts in simple, short ways so users can learn while they save.
 
-        User Context:
-        - Name: {user_context.get('name', 'there')}
-        - Current Goal: {user_context.get('goal_name', 'No active goal')}
-        - Progress: ${user_context.get('current_amount', 0)} / ${user_context.get('target_amount', 0)}
-        - Progress %: {user_context.get('progress_percent', 0)}%
-        - Current Streak: {user_context.get('current_streak', 0)} days
-        - Game Points: {user_context.get('points', 0)}
-        - Game Currency: {user_context.get('currency', 0)}
+You love explaining things like:
+- Down payment (what it is, why it matters, typical ranges like 10–20% for cars, 10–20% for homes)
+- Emergency fund (3–6 months of expenses, why it’s first)
+- APR and interest (how borrowing costs work in plain language)
+- Budgeting, saving goals, and good money habits
 
-        User Message: "{user_message}"
+User context (use only to personalize, not required for teaching):
+- Name: {user_context.get('name', 'there')}
+- Current goal: {user_context.get('goal_name', 'No active goal')}
+- Progress: ${user_context.get('current_amount', 0)} / ${user_context.get('target_amount', 0)} ({user_context.get('progress_percent', 0)}%)
+- Streak: {user_context.get('current_streak', 0)} days
 
-        Provide helpful, motivating advice. Keep responses concise (2-3 sentences max).
-        If they ask about progress, celebrate achievements.
-        If struggling, offer practical tips.
-        Be friendly and use occasional emojis (1-2 max).
-        """
+User asked: "{user_message}"
 
-        model = genai.GenerativeModel('gemini-pro')
-        response = model.generate_content(prompt)
+Rules:
+- Do not start with greetings (no Hi, Hey there, or the user's name)—go straight to the answer.
+- Answer in 2–4 short sentences. Be clear and encouraging.
+- Use simple words. If you use a term (e.g. APR), briefly define it.
+- You may use 1–2 emojis if it fits. Stay focused on teaching the concept.
+- If they ask something off-topic, gently steer to a related finance idea or say you’re here for finance and savings.
+"""
 
-        return response.text
+        for model_name in (GEMINI_CHAT_MODEL, GEMINI_CHAT_FALLBACK):
+            try:
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(prompt)
+                text = (response.text or "").strip()
+                if text:
+                    return text
+            except Exception as fallback_e:
+                print(f"AI chat failed with {model_name}: {fallback_e}")
+                continue
+        return "Ask me about down payments, emergency funds, APR, or saving tips!"
 
     except Exception as e:
         print(f"AI chat failed: {e}")
-        return "I'm having trouble connecting right now, but keep up the great work on your savings goals!"
+        return "I'm having trouble connecting right now. Try again in a bit—and remember: a down payment is the chunk you pay upfront so you borrow less and pay less interest!"
