@@ -275,12 +275,14 @@ export default function App() {
       <AnimatePresence>
         {nudgeNotification && (
           <motion.div
+            key="nudge-sent"
             initial={{ y: -100, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -100, opacity: 0 }}
+            transition={{ type: 'tween', duration: 0.25 }}
             className="fixed top-16 left-0 right-0 z-[100] px-4"
           >
-            <div className="editorial-card bg-brand-black text-white p-4 text-center">
+            <div className="editorial-card bg-brand-black text-white p-4 text-center shadow-lg">
               <p className="font-heading text-xs uppercase">Sent nudge to {nudgeNotification}! ✨</p>
             </div>
           </motion.div>
