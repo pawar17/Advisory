@@ -10,6 +10,11 @@ _api_key = os.getenv('GOOGLE_AI_API_KEY')
 if _api_key and _api_key.strip() and _api_key.strip() not in ('your_google_ai_api_key', 'your_google_ai_key'):
     genai.configure(api_key=_api_key.strip())
 
+# Current Gemini model IDs (see https://ai.google.dev/gemini-api/docs/models)
+GEMINI_CHAT_MODEL = "gemini-2.0-flash"
+GEMINI_CHAT_FALLBACK = "gemini-2.5-flash"
+GEMINI_GOAL_MODEL = "gemini-2.0-flash"
+
 def calculate_levels_with_ai(goal_data, user_data=None):
     """
     Calculate optimal savings levels using AI
@@ -74,7 +79,7 @@ def calculate_levels_with_ai(goal_data, user_data=None):
         Example: {{"daily_savings_tip": "Skip one coffee per week", "milestone_message_25": "Quarter way there!", ...}}
         """
 
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel(GEMINI_GOAL_MODEL)
         response = model.generate_content(prompt)
 
         # Try to parse AI response
@@ -118,6 +123,7 @@ def _is_google_ai_configured():
 
 def ai_chat_assistant(user_message, user_context):
     """
+<<<<<<< HEAD
     AI chatbot assistant for financial advice using Google Gemini API.
     """
     if not _is_google_ai_configured():
@@ -127,10 +133,22 @@ def ai_chat_assistant(user_message, user_context):
             "2. In the Advisory project, open backend/.env\n"
             "3. Set GOOGLE_AI_API_KEY=your_actual_key\n"
             "4. Restart the backend server."
+=======
+    AI chatbot that teaches finance concepts (down payments, emergency fund, APR, etc.)
+    for the SavePop savings app.
+    """
+    api_key = os.getenv('GOOGLE_AI_API_KEY')
+    if not api_key or api_key.strip() in ('', 'your_google_ai_api_key'):
+        return (
+            "To use the finance coach, add your Google AI (Gemini) API key in the backend .env file as GOOGLE_AI_API_KEY. "
+            "Until then, here’s a quick tip: a down payment is the upfront cash you pay when buying something big (like a car or house); "
+            "the rest you borrow. Saving for it first helps you pay less interest and get better terms."
+>>>>>>> 18e9af6c9e0045dac463ff4b560df440b9e586ed
         )
 
     try:
         prompt = f"""
+<<<<<<< HEAD
         You are a helpful, encouraging financial assistant for a gamified savings app.
 
         User Context:
@@ -156,13 +174,54 @@ def ai_chat_assistant(user_message, user_context):
         if response and response.text:
             return response.text.strip()
         return "I didn't get a response this time. Try asking again in a moment!"
+=======
+You are SavePop's friendly finance coach. Your main job is to teach personal finance concepts in simple, short ways so users can learn while they save.
+
+You love explaining things like:
+- Down payment (what it is, why it matters, typical ranges like 10–20% for cars, 10–20% for homes)
+- Emergency fund (3–6 months of expenses, why it’s first)
+- APR and interest (how borrowing costs work in plain language)
+- Budgeting, saving goals, and good money habits
+
+User context (use only to personalize, not required for teaching):
+- Name: {user_context.get('name', 'there')}
+- Current goal: {user_context.get('goal_name', 'No active goal')}
+- Progress: ${user_context.get('current_amount', 0)} / ${user_context.get('target_amount', 0)} ({user_context.get('progress_percent', 0)}%)
+- Streak: {user_context.get('current_streak', 0)} days
+
+User asked: "{user_message}"
+
+Rules:
+- Do not start with greetings (no Hi, Hey there, or the user's name)—go straight to the answer.
+- Answer in 2–4 short sentences. Be clear and encouraging.
+- Use simple words. If you use a term (e.g. APR), briefly define it.
+- You may use 1–2 emojis if it fits. Stay focused on teaching the concept.
+- If they ask something off-topic, gently steer to a related finance idea or say you’re here for finance and savings.
+"""
+
+        for model_name in (GEMINI_CHAT_MODEL, GEMINI_CHAT_FALLBACK):
+            try:
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(prompt)
+                text = (response.text or "").strip()
+                if text:
+                    return text
+            except Exception as fallback_e:
+                print(f"AI chat failed with {model_name}: {fallback_e}")
+                continue
+        return "Ask me about down payments, emergency funds, APR, or saving tips!"
+>>>>>>> 18e9af6c9e0045dac463ff4b560df440b9e586ed
 
     except Exception as e:
         err = str(e).lower()
         print(f"AI chat failed: {e}")
+<<<<<<< HEAD
         if 'api_key' in err or 'invalid' in err or '403' in err or '401' in err:
             return (
                 "Google AI rejected the request. Check that GOOGLE_AI_API_KEY in backend/.env "
                 "is a valid key from https://aistudio.google.com and restart the backend."
             )
         return "I'm having a brief connection hiccup. Try again in a moment!"
+=======
+        return "I'm having trouble connecting right now. Try again in a bit—and remember: a down payment is the chunk you pay upfront so you borrow less and pay less interest!"
+>>>>>>> 18e9af6c9e0045dac463ff4b560df440b9e586ed
