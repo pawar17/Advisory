@@ -13,7 +13,6 @@ A gamified personal finance application that transforms savings goals into an en
 - **Backend**: Python (Flask), PyMongo
 - **Database**: MongoDB Atlas
 - **AI**: Google AI Studio API (Gemini models)
-- **Banking**: Capital One Nessie API (sandbox)
 
 ## Project Structure
 ```
