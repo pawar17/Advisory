@@ -6,7 +6,9 @@ from datetime import datetime, timedelta
 
 load_dotenv()
 
-genai.configure(api_key=os.getenv('GOOGLE_AI_API_KEY'))
+_api_key = os.getenv('GOOGLE_AI_API_KEY')
+if _api_key and _api_key.strip() and _api_key.strip() not in ('your_google_ai_api_key', 'your_google_ai_key'):
+    genai.configure(api_key=_api_key.strip())
 
 def calculate_levels_with_ai(goal_data, user_data=None):
     """
@@ -108,10 +110,25 @@ def calculate_levels_with_ai(goal_data, user_data=None):
             }
         }
 
+def _is_google_ai_configured():
+    key = os.getenv('GOOGLE_AI_API_KEY') or ''
+    key = key.strip()
+    return key and key not in ('your_google_ai_api_key', 'your_google_ai_key')
+
+
 def ai_chat_assistant(user_message, user_context):
     """
-    AI chatbot assistant for financial advice
+    AI chatbot assistant for financial advice using Google Gemini API.
     """
+    if not _is_google_ai_configured():
+        return (
+            "I can't connect to Google AI yet. To enable the chatbot:\n\n"
+            "1. Get a free API key at https://aistudio.google.com (Get API key)\n"
+            "2. In the Advisory project, open backend/.env\n"
+            "3. Set GOOGLE_AI_API_KEY=your_actual_key\n"
+            "4. Restart the backend server."
+        )
+
     try:
         prompt = f"""
         You are a helpful, encouraging financial assistant for a gamified savings app.
@@ -133,11 +150,19 @@ def ai_chat_assistant(user_message, user_context):
         Be friendly and use occasional emojis (1-2 max).
         """
 
+        # Use gemini-pro (supported by API key / v1beta); gemini-1.5-flash returns 404 on this API
         model = genai.GenerativeModel('gemini-pro')
         response = model.generate_content(prompt)
-
-        return response.text
+        if response and response.text:
+            return response.text.strip()
+        return "I didn't get a response this time. Try asking again in a moment!"
 
     except Exception as e:
+        err = str(e).lower()
         print(f"AI chat failed: {e}")
-        return "I'm having trouble connecting right now, but keep up the great work on your savings goals!"
+        if 'api_key' in err or 'invalid' in err or '403' in err or '401' in err:
+            return (
+                "Google AI rejected the request. Check that GOOGLE_AI_API_KEY in backend/.env "
+                "is a valid key from https://aistudio.google.com and restart the backend."
+            )
+        return "I'm having a brief connection hiccup. Try again in a moment!"
